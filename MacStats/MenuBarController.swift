@@ -256,6 +256,12 @@ class MenuBarController: NSObject, ObservableObject {
             appleScript.executeAndReturnError(nil)
         }
     }
+    
+    // MARK: - Project Page
+    static func openProjectPage() {
+        guard let url = URL(string: "https://github.com/rakodev/mac-stats") else { return }
+        NSWorkspace.shared.open(url)
+    }
 }
 
 // MARK: - SwiftUI Popover View
@@ -266,14 +272,7 @@ struct MenuBarPopoverView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 15) {
             // Header
-            HStack {
-                Image(systemName: "chart.line.uptrend.xyaxis")
-                    .foregroundColor(.blue)
-                Text("Mac Stats")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                Spacer()
-            }
+            LinkHeader()
             
             Divider()
             
@@ -387,5 +386,36 @@ struct MenuBarPopoverView: View {
         }
         .padding()
         .frame(width: 300)
+    }
+}
+
+// MARK: - Link Header View
+private struct LinkHeader: View {
+    @State private var hovering = false
+    var body: some View {
+        HStack {
+            Image(systemName: "chart.line.uptrend.xyaxis")
+                .foregroundColor(.blue)
+            Button(action: { MenuBarController.openProjectPage() }) {
+                HStack(spacing: 4) {
+                    Text("Mac Stats")
+                        .font(.headline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.blue)
+                    Image(systemName: "arrow.up.right.square")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .padding(.vertical, 4)
+                .padding(.horizontal, 6)
+                .background(hovering ? Color.blue.opacity(0.12) : Color.clear)
+                .cornerRadius(6)
+            }
+            .buttonStyle(.plain)
+            .onHover { hovering = $0 }
+            .help("Open project page on GitHub")
+            Spacer()
+        }
+        .contentShape(Rectangle())
     }
 }

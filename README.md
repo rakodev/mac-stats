@@ -1,278 +1,100 @@
 # MacStats 📊
 
-A lightweight, native macOS menu bar application that displays real-time CPU and memory usage statistics.
+Lightweight macOS menu bar app showing real‑time CPU and Memory usage. Built to be simple, accurate, and low overhead.
 
 ![MacStats Demo](assets/demo.gif)
 
-## Quick Start 🚀
+## Why
+You shouldn’t need a heavy multi‑window monitor just to glance at CPU and memory. MacStats gives you the essentials in the menu bar with optional detail on click.
 
-1. **Clone and build:**
-   ```bash
-   git clone <your-repo-url>
-   cd mac-stats
-   make run
-   ```
+## Key Features
+* Live CPU % and Memory usage
+* Multiple display formats (compact, detailed, CPU-only, MEM-only)
+* Click CPU or Memory text to open Activity Monitor on the corresponding tab
+* Configurable refresh interval (1s / 2s / 5s / 10s)
+* Accurate memory calculation aligned with Activity Monitor (App Memory perspective)
+* SwiftUI native UI, minimal footprint, universal binary (Apple Silicon + Intel)
 
-2. **The app will appear in your menu bar showing:**
-   - CPU usage percentage
-   - Memory usage percentage
-
-3. **Click the menu bar item to:**
-   - View detailed system information
-   - Toggle between light/dark theme
-   - Quit the application
-
-## Features ✨
-
-- **Real-time Monitoring**: Live CPU and memory usage displayed in your menu bar
-- **Multiple Display Formats**: Choose from compact, detailed, CPU-only, or memory-only views
-- **Customizable Refresh Rate**: Set update intervals from 1 to 10 seconds
-- **Native macOS Design**: Built with SwiftUI for a clean, modern interface
-- **Lightweight**: Minimal resource usage while monitoring your system
-- **Menu Bar Only**: Stays out of your way in the dock
-- **Interactive Popover**: Click the menu bar item to see detailed statistics
-- **Right-click Menu**: Quick access to settings and preferences
-
-## Screenshots 📸
-
-### Menu Bar Display Formats
-
-| Compact | Detailed | CPU Only | Memory Only |
-|---------|----------|----------|-------------|
-| `CPU 45% MEM 60%` | `CPU 45.2% \| MEM 8.1GB/16.0GB` | `CPU 45%` | `MEM 60%` |
-
-### Detailed Popover View
-- Interactive progress bars for CPU and memory usage
-- Real-time statistics with formatted memory values
-- Settings panel for customizing display format and refresh rate
-
-## Requirements 📋
-
-- **macOS 13.0** or later
-- **Xcode 15.0** or later (for building from source)
-- **Apple Silicon** or **Intel** Mac
-
-## Installation 🚀
-
-### Option 1: Download Pre-built Binary (Recommended)
-
-1. Go to the [Releases](https://github.com/yourusername/mac-stats/releases) page
-2. Download the latest `MacStats.dmg` or `MacStats.zip`
-3. If using DMG:
-   - Mount the DMG file
-   - Drag MacStats.app to your Applications folder
-4. If using ZIP:
-   - Extract the ZIP file
-   - Move MacStats.app to your Applications folder
-5. Launch MacStats from Applications or Spotlight
-
-### Option 2: Build from Source
-
-#### Prerequisites
-
-Make sure you have the required tools installed:
-
+## Quick Start
 ```bash
-# Check if Xcode command line tools are installed
-xcode-select --version
+git clone https://github.com/yourusername/mac-stats.git
+cd mac-stats
+make run   # or: make dev
+```
+The status item appears in the menu bar. Left‑click for the popover (detailed view + settings). Right‑click for quick format / refresh changes.
 
-# If not installed, install them:
-xcode-select --install
+## Install (Binary)
+1. Download the latest release (DMG or ZIP)
+2. Move `MacStats.app` to Applications
+3. Launch (Spotlight or Applications)
 
-# Optional: Install create-dmg for DMG creation
-brew install create-dmg
+## Display Formats
+Format examples:
+* Compact: `CPU 37% MEM 52%`
+* Detailed: `CPU 37.2% | MEM 8.1GB/16.0GB`
+* CPU Only: `CPU 37%`
+* Memory Only: `MEM 52%`
+
+## Settings Persist
+Automatically stored via `UserDefaults`: display format, refresh interval, theme preference.
+
+## Activity Monitor Integration
+* Click CPU label → Opens Activity Monitor on CPU tab
+* Click Memory label → Opens Activity Monitor on Memory tab
+If Activity Monitor isn’t running it will be launched automatically.
+
+## Requirements
+macOS 13.0+, Xcode 15+ (to build).
+
+## Build From Source
+```bash
+make build     # release artifacts
+make dev       # fast debug build
+open MacStats.xcodeproj # build/run inside Xcode (⌘+R)
 ```
 
-#### Building
+Artifacts (release): unsigned .app, optional zip / dmg (if create-dmg installed).
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/yourusername/mac-stats.git
-   cd mac-stats
-   ```
+## Uninstall
+Quit the app, then remove:
+```bash
+rm -rf /Applications/MacStats.app
+defaults delete com.macstats.app || true
+```
 
-2. **Build using the provided scripts:**
-   ```bash
-   # For release build (creates distributable app)
-   make build
-   # or
-   ./build.sh
-
-   # For development build (quick testing)
-   make dev
-   # or
-   ./dev-build.sh
-   ```
-
-3. **Alternative: Build with Xcode:**
-   ```bash
-   # Open the project in Xcode
-   open MacStats.xcodeproj
-   
-   # Build and run using Xcode (⌘+R)
-   ```
-
-4. **Install the built app:**
-   ```bash
-   # The built app will be in build/export/MacStats.app
-   cp -r build/export/MacStats.app /Applications/
-   ```
-
-## Usage 💡
-
-### First Launch
-
-1. Launch MacStats from Applications
-2. Grant necessary permissions if prompted
-3. Look for CPU and memory stats in your menu bar (usually in the top-right area)
-
-### Interacting with MacStats
-
-- **Left Click**: Opens detailed popover with progress bars and settings
-- **Right Click**: Opens context menu with display format and refresh rate options
-- **Settings**: Customize display format and refresh interval from the popover or context menu
-
-### Display Formats
-
-- **Compact**: `CPU 45% MEM 60%` - Shows both CPU and memory percentages
-- **Detailed**: `CPU 45.2% | MEM 8.1GB/16.0GB` - Shows precise values with memory in GB
-- **CPU Only**: `CPU 45%` - Shows only CPU usage
-- **Memory Only**: `MEM 60%` - Shows only memory usage percentage
-
-### Refresh Intervals
-
-Choose from 1s, 2s, 5s, or 10s refresh rates based on your preference and system performance needs.
-
-## Configuration ⚙️
-
-MacStats automatically saves your preferences. Settings are stored in macOS user defaults and include:
-
-- Display format preference
-- Refresh interval setting
-- Theme preference (follows system theme by default)
-
-## Troubleshooting 🔧
-
-### Common Issues
-
-**App doesn't appear in menu bar:**
-- Make sure you've granted necessary permissions
-- Try restarting the app
-- Check if the app is running in Activity Monitor
-
-**Inaccurate CPU readings:**
-- CPU usage calculations may vary depending on system load
-- Try adjusting the refresh interval
-
-**High CPU usage by MacStats itself:**
-- Increase the refresh interval to reduce monitoring frequency
-- Restart the app if it's consuming excessive resources
-
-**Build errors:**
-- Ensure you have Xcode 15.0 or later
-- Make sure macOS deployment target is set to 13.0+
-- Try cleaning the build folder: `make clean`
-
-### Permission Issues
-
-If MacStats can't access system information:
-
-1. Go to **System Preferences → Security & Privacy → Privacy**
-2. Look for relevant permissions and add MacStats if needed
-3. Restart the application
-
-### Uninstalling
-
-To completely remove MacStats:
-
-1. Quit the application (right-click menu → Quit)
-2. Delete from Applications: `rm -rf /Applications/MacStats.app`
-3. Remove preferences: `defaults delete com.macstats.app`
-
-## Development 🛠️
-
-### Project Structure
-
+## Project Structure
 ```
 MacStats/
-├── MacStats.xcodeproj/          # Xcode project file
-├── MacStats/                    # Source code
-│   ├── MacStatsApp.swift       # Main app entry point
-│   ├── MenuBarController.swift  # Menu bar interface controller
-│   ├── SystemMonitor.swift     # System monitoring logic
-│   ├── UserPreferences.swift   # Settings and preferences
-│   ├── ContentView.swift       # SwiftUI views
-│   └── Assets.xcassets/        # App icons and assets
-├── build.sh                     # Release build script
-├── dev-build.sh                # Development build script
-├── Makefile                    # Build automation
-└── README.md                   # This file
+  MacStats/                Core sources
+    SystemMonitor.swift    CPU + memory collection
+    MenuBarController.swift Menu bar + popover + Activity Monitor hooks
+    UserPreferences.swift  Persistence (UserDefaults)
+    ContentView.swift      SwiftUI views
+    MacStatsApp.swift      Entry point
 ```
 
-### Building for Distribution
+## Technical Notes
+CPU: Derived via `host_processor_info` diffing ticks between samples.
+Memory: Computes used App Memory (wired + active + compressed + internal) vs total physical.
+Refresh: Timer driven (DispatchSource / Combine) using selected interval.
+UI: SwiftUI embedded in `NSStatusItem` with a popover.
 
-The build script creates:
-- Unsigned `.app` bundle
-- ZIP archive for distribution
-- DMG installer (if `create-dmg` is available)
+## Goals
+* Stay tiny (< a few MB, negligible runtime CPU)
+* Zero external heavy dependencies
+* Fast sample + format + paint cycle
+* Clear, glanceable text first; extra detail optional
 
-### Code Signing
+## Non‑Goals
+* Process-level breakdowns
+* GPU metrics
+* Network or disk IO panels
 
-For distribution outside the App Store, you'll need to:
+## Contributing
+Small focused PRs welcome (bugfixes, accuracy improvements, energy efficiency). Avoid feature creep that bloats memory/CPU.
 
-1. Get a Developer ID certificate from Apple
-2. Update the build scripts to include code signing
-3. Notarize the app for Gatekeeper compatibility
-
-### Contributing
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/new-feature`
-3. Make your changes and test thoroughly
-4. Commit your changes: `git commit -am 'Add new feature'`
-5. Push to the branch: `git push origin feature/new-feature`
-6. Submit a pull request
-
-## Technical Details 🔍
-
-### System APIs Used
-
-- **CPU Monitoring**: Uses `mach_task_info` and `host_processor_info` APIs
-- **Memory Monitoring**: Uses `vm_statistics64` and `mach_task_basic_info` APIs
-- **Menu Bar Integration**: NSStatusItem with SwiftUI popover
-- **Preferences**: UserDefaults for persistent settings
-
-### Performance
-
-- Lightweight Swift implementation
-- Configurable refresh rates to balance accuracy vs. performance
-- Efficient memory management with automatic cleanup
-- Background thread processing to avoid UI blocking
-
-### Compatibility
-
-- **macOS 13.0+**: Uses modern SwiftUI and Combine frameworks
-- **Universal Binary**: Supports both Apple Silicon and Intel Macs
-- **Sandboxed**: Designed to work within App Store sandbox restrictions
-
-## License 📄
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Acknowledgments 🙏
-
-- Apple's System Information APIs documentation
-- macOS Human Interface Guidelines
-- SwiftUI and Combine frameworks
-
-## Support 💬
-
-If you encounter any issues or have questions:
-
-1. Check the [Issues](https://github.com/yourusername/mac-stats/issues) page
-2. Create a new issue with detailed information about your problem
-3. Include your macOS version and any error messages
+## License
+MIT. See [LICENSE](LICENSE).
 
 ---
-
-**Made with ❤️ for the macOS community**
+Made with ❤️ to keep your Mac calm.
