@@ -5,9 +5,16 @@ import IOKit.ps
 struct SystemStats {
     let cpuUsage: Double
     let memoryUsage: MemoryUsage
+    let diskUsage: DiskUsage
 }
 
 struct MemoryUsage {
+    let used: UInt64
+    let total: UInt64
+    let percentage: Double
+}
+
+struct DiskUsage {
     let used: UInt64
     let total: UInt64
     let percentage: Double
@@ -17,7 +24,8 @@ struct MemoryUsage {
 class SystemMonitor: ObservableObject {
     @Published var currentStats = SystemStats(
         cpuUsage: 0.0,
-        memoryUsage: MemoryUsage(used: 0, total: 0, percentage: 0.0)
+        memoryUsage: MemoryUsage(used: 0, total: 0, percentage: 0.0),
+        diskUsage: DiskUsage(used: 0, total: 0, percentage: 0.0)
     )
     
     private var timer: Timer?
@@ -56,11 +64,13 @@ class SystemMonitor: ObservableObject {
         DispatchQueue.global(qos: .background).async {
             let cpuUsage = self.getCPUUsage()
             let memoryUsage = self.getMemoryUsage()
+            let diskUsage = self.getDiskUsage()
             
             DispatchQueue.main.async {
                 self.currentStats = SystemStats(
                     cpuUsage: cpuUsage,
-                    memoryUsage: memoryUsage
+                    memoryUsage: memoryUsage,
+                    diskUsage: diskUsage
                 )
             }
         }
@@ -147,12 +157,12 @@ class SystemMonitor: ObservableObject {
         let totalMemory = ProcessInfo.processInfo.physicalMemory
         
         // Calculate memory usage to match Activity Monitor's "App Memory"
-        let freePages = UInt64(vmStats.free_count)
-        let activePages = UInt64(vmStats.active_count)
-        let inactivePages = UInt64(vmStats.inactive_count)
-        let wiredPages = UInt64(vmStats.wire_count)
-        let compressedPages = UInt64(vmStats.compressor_page_count)
-        let speculativePages = UInt64(vmStats.speculative_count)
+    _ = UInt64(vmStats.free_count) // free pages not needed for Activity Monitor style metric
+    let activePages = UInt64(vmStats.active_count)
+    _ = UInt64(vmStats.inactive_count) // inactive not part of App Memory calculation
+    let wiredPages = UInt64(vmStats.wire_count)
+    let compressedPages = UInt64(vmStats.compressor_page_count)
+    _ = UInt64(vmStats.speculative_count) // speculative not used
         
         // App Memory = Active + Wired + Compressed (matches Activity Monitor's "App Memory")
         // This excludes inactive, free, and speculative memory which are not actively used by apps
@@ -165,6 +175,29 @@ class SystemMonitor: ObservableObject {
             total: totalMemory,
             percentage: max(0.0, min(100.0, percentage))
         )
+    }
+
+    // MARK: - Disk Usage
+    private func getDiskUsage() -> DiskUsage {
+        let path = "/" // main volume
+        do {
+            let attrs = try FileManager.default.attributesOfFileSystem(forPath: path)
+            if let totalSpace = attrs[.systemSize] as? NSNumber,
+               let freeSpace = attrs[.systemFreeSize] as? NSNumber {
+                let total = totalSpace.uint64Value
+                let free = freeSpace.uint64Value
+                let used = total > free ? (total - free) : 0
+                let percentage = total > 0 ? (Double(used) / Double(total)) * 100.0 : 0.0
+                return DiskUsage(
+                    used: used,
+                    total: total,
+                    percentage: max(0.0, min(100.0, percentage))
+                )
+            }
+        } catch {
+            // ignore, fall through
+        }
+        return DiskUsage(used: 0, total: 0, percentage: 0.0)
     }
 }
 
@@ -189,4 +222,17 @@ extension MemoryUsage {
     var formattedTotal: String {
         return String(format: "%.1fGB", totalGB)
     }
+}
+
+extension DiskUsage {
+    var usedGB: Double { Double(used) / (1024 * 1024 * 1024) }
+    var totalGB: Double { Double(total) / (1024 * 1024 * 1024) }
+    var formattedUsed: String {
+        if used < 1024 * 1024 * 1024 {
+            return String(format: "%.1fMB", Double(used) / (1024 * 1024))
+        } else {
+            return String(format: "%.1fGB", usedGB)
+        }
+    }
+    var formattedTotal: String { String(format: "%.1fGB", totalGB) }
 }
