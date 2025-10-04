@@ -1,0 +1,30 @@
+# Build artifacts
+build/
+DerivedData/
+*.xcarchive
+
+# Xcode
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+*.xcodeproj/project.xcworkspace/xcuserdata/
+
+# macOS
+.DS_Store
+*.dmg
+*.zip
+
+# Swift Package Manager
+.swiftpm/
+Package.resolved
+
+# CocoaPods (if used)
+Pods/
+*.podlock
+
+# Carthage (if used)
+Carthage/Build/
+
+# IDE
+.vscode/
+.idea/
