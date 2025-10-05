@@ -14,6 +14,7 @@
 		1D1E6B482B123A5000000001 /* SystemMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D1E6B472B123A5000000001 /* SystemMonitor.swift */; };
 		1D1E6B4A2B123A6000000001 /* MenuBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D1E6B492B123A6000000001 /* MenuBarController.swift */; };
 		1D1E6B4C2B123A7000000001 /* UserPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D1E6B4B2B123A7000000001 /* UserPreferences.swift */; };
+		STATUSITEMVIEW /* StatusItemView.swift in Sources */ = {isa = PBXBuildFile; fileRef = STATUSITEMVIEW_REF /* StatusItemView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -26,6 +27,7 @@
 		1D1E6B472B123A5000000001 /* SystemMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemMonitor.swift; sourceTree = "<group>"; };
 		1D1E6B492B123A6000000001 /* MenuBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarController.swift; sourceTree = "<group>"; };
 		1D1E6B4B2B123A7000000001 /* UserPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserPreferences.swift; sourceTree = "<group>"; };
+		STATUSITEMVIEW_REF /* StatusItemView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusItemView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -63,6 +65,7 @@
 				1D1E6B472B123A5000000001 /* SystemMonitor.swift */,
 				1D1E6B492B123A6000000001 /* MenuBarController.swift */,
 				1D1E6B4B2B123A7000000001 /* UserPreferences.swift */,
+				STATUSITEMVIEW_REF /* StatusItemView.swift */,
 				1D1E6B3D2B123A4100000001 /* Assets.xcassets */,
 				1D1E6B422B123A4100000001 /* MacStats.entitlements */,
 				1D1E6B3F2B123A4100000001 /* Preview Content */,
@@ -153,6 +156,7 @@
 				1D1E6B4A2B123A6000000001 /* MenuBarController.swift in Sources */,
 				1D1E6B4C2B123A7000000001 /* UserPreferences.swift in Sources */,
 				1D1E6B3A2B123A4000000001 /* MacStatsApp.swift in Sources */,
+				STATUSITEMVIEW /* StatusItemView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

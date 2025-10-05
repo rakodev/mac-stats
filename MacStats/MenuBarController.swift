@@ -11,47 +11,6 @@ enum DisplayFormat: String, CaseIterable {
     var displayName: String { rawValue }
 }
 
-// MARK: - Symbol Builder (CPU / Memory / Disk)
-private enum SymbolBuilder {
-    static let cpuPlaceholder = "[CPU]"
-    static let memPlaceholder = "[MEM]"
-    static let diskPlaceholder = "[DISK]"
-    
-    private static func symbolName(for placeholder: String) -> String? {
-        switch placeholder {
-        case cpuPlaceholder: return "cpu"
-        case memPlaceholder:
-            // Prefer sdcard (micro SD style) if available, fallback to memorychip
-            if #available(macOS 11.0, *), NSImage(systemSymbolName: "sdcard", accessibilityDescription: nil) != nil {
-                return "sdcard"
-            }
-            return "memorychip"
-        case diskPlaceholder: return "internaldrive"
-        default: return nil
-        }
-    }
-    
-    static func attributedSymbol(for placeholder: String, font: NSFont) -> NSAttributedString? {
-        guard #available(macOS 11.0, *), let name = symbolName(for: placeholder),
-              let image = NSImage(systemSymbolName: name, accessibilityDescription: nil) else { return nil }
-        // Scale symbol larger than text cap height for better legibility in the menubar.
-        // Requested: make icons roughly 2x larger than previous implementation.
-        let scaleMultiplier: CGFloat = 2.0
-        let targetHeight = font.capHeight * scaleMultiplier
-        let ratio = image.size.height > 0 ? targetHeight / image.size.height : 1
-        let scaledSize = NSSize(width: image.size.width * ratio, height: image.size.height * ratio)
-        let resized = NSImage(size: scaledSize)
-        resized.lockFocus()
-        image.draw(in: NSRect(origin: .zero, size: scaledSize))
-        resized.unlockFocus()
-        let attachment = NSTextAttachment()
-        attachment.image = resized
-        // Nudge vertically so the larger glyph sits more naturally on the baseline.
-        attachment.bounds = NSRect(x: 0, y: font.descender + 1, width: scaledSize.width, height: scaledSize.height)
-        return NSAttributedString(attachment: attachment)
-    }
-}
-
 // MARK: - Refresh Interval Enum
 enum RefreshInterval: Double, CaseIterable {
     case oneSecond = 1.0
@@ -101,15 +60,16 @@ class MenuBarController: NSObject, ObservableObject {
     }
     
     private func setupStatusItem() {
-        statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        
-        if let button = statusItem.button {
-            button.action = #selector(statusItemClicked)
-            button.target = self
-            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        // FIXED WIDTH - optimized for compact layout
+        statusItem = NSStatusBar.system.statusItem(withLength: 140)
+        let custom = StatusItemView(frame: NSRect(x: 0, y: 0, width: 140, height: 22))
+        custom.clickHandler = { [weak self] event in
+            guard let self = self else { return }
+            if event.type == .rightMouseUp { self.showContextMenu() } else { self.togglePopover() }
         }
-        
-        updateStatusItemTitle()
+        statusItem.button?.isHidden = true
+        statusItem.view = custom
+        rebuildCustomView()
     }
     
     private func setupPopover() {
@@ -172,12 +132,12 @@ class MenuBarController: NSObject, ObservableObject {
     }
     
     private func togglePopover() {
-        guard let button = statusItem.button else { return }
+        guard let view = statusItem.view as? StatusItemView else { return }
         
         if popover.isShown {
             popover.performClose(nil)
         } else {
-            popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+            popover.show(relativeTo: view.bounds, of: view, preferredEdge: .minY)
         }
     }
     
@@ -218,9 +178,9 @@ class MenuBarController: NSObject, ObservableObject {
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q"))
         
-        statusItem.menu = menu
-        statusItem.button?.performClick(nil)
-        statusItem.menu = nil
+        // Show the menu relative to the custom view
+        guard let view = statusItem.view as? StatusItemView else { return }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: view.bounds.height), in: view)
     }
     
     @objc private func formatSelected(_ sender: NSMenuItem) {
@@ -242,63 +202,21 @@ class MenuBarController: NSObject, ObservableObject {
         NSApplication.shared.terminate(nil)
     }
     
-    func updateStatusItemTitle() {
-        guard let button = statusItem.button else { return }
-        
+    func updateStatusItemTitle() { rebuildCustomView() }
+
+    private func rebuildCustomView() {
+        guard let view = statusItem.view as? StatusItemView else { return }
+        let prefs = preferencesManager
+        var metrics: [StatusItemView.Metric] = []
         let stats = systemMonitor.currentStats
-        let raw = buildDynamicTitle(stats: stats)
-        let placeholders = [SymbolBuilder.cpuPlaceholder, SymbolBuilder.memPlaceholder, SymbolBuilder.diskPlaceholder]
-        if placeholders.contains(where: { raw.contains($0) }) {
-            let font = button.font ?? NSFont.systemFont(ofSize: NSFont.systemFontSize(for: .small))
-            let result = NSMutableAttributedString()
-            var cursor = raw.startIndex
-            while cursor < raw.endIndex {
-                // Find next placeholder occurrence among all
-                var nextRange: Range<String.Index>? = nil
-                var matchedPlaceholder: String? = nil
-                for ph in placeholders {
-                    if let r = raw.range(of: ph, range: cursor..<raw.endIndex), (nextRange == nil || r.lowerBound < nextRange!.lowerBound) {
-                        nextRange = r
-                        matchedPlaceholder = ph
-                    }
-                }
-                if let r = nextRange, let ph = matchedPlaceholder {
-                    // Append preceding text
-                    if r.lowerBound > cursor {
-                        let text = String(raw[cursor..<r.lowerBound])
-                        result.append(NSAttributedString(string: text, attributes: [.font: font]))
-                    }
-                    // Append symbol (or fallback text)
-                    if let symbol = SymbolBuilder.attributedSymbol(for: ph, font: font) {
-                        // Append with tight binding to following number: symbol + thin space (U+2009)
-                        if result.length > 0, !result.string.hasSuffix(" ") { result.append(NSAttributedString(string: " ")) }
-                        result.append(symbol)
-                        // thin space to visually bind the value to this icon without a wide gap
-                        result.append(NSAttributedString(string: "\u{2009}"))
-                    } else {
-                        // Fallback textual label (short)
-                        if result.length > 0, !result.string.hasSuffix(" ") { result.append(NSAttributedString(string: " ")) }
-                        let fallback: String
-                        switch ph {
-                        case SymbolBuilder.cpuPlaceholder: fallback = "CPU "
-                        case SymbolBuilder.memPlaceholder: fallback = "MEM "
-                        case SymbolBuilder.diskPlaceholder: fallback = "DISK "
-                        default: fallback = ""
-                        }
-                        result.append(NSAttributedString(string: fallback, attributes: [.font: font]))
-                    }
-                    cursor = r.upperBound
-                } else {
-                    // No more placeholders
-                    let text = String(raw[cursor..<raw.endIndex])
-                    result.append(NSAttributedString(string: text, attributes: [.font: font]))
-                    break
-                }
-            }
-            button.attributedTitle = result
-        } else {
-            button.attributedTitle = NSAttributedString(string: raw)
-        }
+        if prefs.showCPU { metrics.append(.init(kind: .cpu, percentage: stats.cpuUsage)) }
+        if prefs.showMemory { metrics.append(.init(kind: .mem, percentage: stats.memoryUsage.percentage)) }
+        if prefs.showDisk { metrics.append(.init(kind: .disk, percentage: stats.diskUsage.percentage)) }
+        
+        // Only update the data - NO layout calculations
+        view.displayDetailed = (displayFormat == .detailed)
+        view.metrics = metrics
+        view.needsDisplay = true
     }
 
     // Provide minimal user feedback when an action is disallowed (e.g., hiding last metric)
@@ -311,24 +229,6 @@ class MenuBarController: NSObject, ObservableObject {
         // Run asynchronously so it doesn't block UI update pipeline.
         DispatchQueue.main.async {
             alert.runModal()
-        }
-    }
-    
-    private func buildDynamicTitle(stats: SystemStats) -> String {
-        let prefs = preferencesManager
-        switch displayFormat {
-        case .compact:
-            var parts: [String] = []
-            if prefs.showCPU { parts.append(String(format: "[CPU]%.0f%%", stats.cpuUsage)) }
-            if prefs.showMemory { parts.append(String(format: "[MEM]%.0f%%", stats.memoryUsage.percentage)) }
-            if prefs.showDisk { parts.append(String(format: "[DISK]%.0f%%", stats.diskUsage.percentage)) }
-            return parts.joined(separator: " ")
-        case .detailed:
-            var segments: [String] = []
-            if prefs.showCPU { segments.append(String(format: "[CPU]%.1f%%", stats.cpuUsage)) }
-            if prefs.showMemory { segments.append(String(format: "[MEM]%.1fGB/%.1fGB", stats.memoryUsage.usedGB, stats.memoryUsage.totalGB)) }
-            if prefs.showDisk { segments.append(String(format: "[DISK]%.1fGB/%.1fGB", stats.diskUsage.usedGB, stats.diskUsage.totalGB)) }
-            return segments.joined(separator: " | ")
         }
     }
     

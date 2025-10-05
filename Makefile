@@ -20,10 +20,12 @@ clean:
 	@echo "🧹 Cleaning build artifacts..."
 	@rm -rf build/
 	@rm -rf DerivedData/
+	@rm -rf ~/Library/Developer/Xcode/DerivedData/MacStats-*
+	@pkill -f MacStats || true
 	@echo "✅ Clean completed!"
 
-# Run the application
-run:
+# Run the application (with clean build)
+run: clean dev
 	@echo "🚀 Running MacStats..."
 	@./run.sh
 
@@ -48,7 +50,7 @@ help:
 	@echo "Available targets:"
 	@echo "  build    - Build for release distribution"
 	@echo "  dev      - Build for development"
-	@echo "  run      - Run the application (builds if needed)"
+	@echo "  run      - Clean build and run the application"
 	@echo "  clean    - Clean build artifacts"
 	@echo "  install  - Check and install dependencies"
 	@echo "  help     - Show this help message"
