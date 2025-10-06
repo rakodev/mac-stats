@@ -34,12 +34,23 @@ enum RefreshInterval: Double, CaseIterable {
 
 // MARK: - Menu Bar Controller
 class MenuBarController: NSObject, ObservableObject {
-    private var statusItem: NSStatusItem!
+    private var cpuStatusItem: NSStatusItem?
+    private var memoryStatusItem: NSStatusItem?
+    private var diskStatusItem: NSStatusItem?
+    
     var systemMonitor = SystemMonitor()
     public var preferencesManager = UserPreferencesManager.shared
     
     private var popover: NSPopover!
     private var cancellables = Set<AnyCancellable>()
+    
+    // Helper function to get memory icon name
+    private func memoryIconName() -> String {
+        if #available(macOS 11.0, *), NSImage(systemSymbolName: "sdcard", accessibilityDescription: nil) != nil {
+            return "sdcard"
+        }
+        return "memorychip" // fallback
+    }
     
     // Published properties for SwiftUI binding
     @Published var displayFormat: DisplayFormat = .compact
@@ -59,17 +70,113 @@ class MenuBarController: NSObject, ObservableObject {
         setupPreferencesObservers()
     }
     
+    deinit {
+        removeStatusItems()
+    }
+    
     private func setupStatusItem() {
-        // FIXED WIDTH - optimized for compact layout
-        statusItem = NSStatusBar.system.statusItem(withLength: 140)
-        let custom = StatusItemView(frame: NSRect(x: 0, y: 0, width: 140, height: 22))
-        custom.clickHandler = { [weak self] event in
-            guard let self = self else { return }
-            if event.type == .rightMouseUp { self.showContextMenu() } else { self.togglePopover() }
+        // Remove existing status items
+        removeStatusItems()
+        
+        let prefs = preferencesManager
+        
+        // Create status items in reverse order since macOS displays them right-to-left
+        // This ensures left-to-right order: CPU, Memory, Disk
+        
+        // Calculate fixed width to accommodate icon + "100%" text
+    // Reduced from 65 -> 58 to tighten horizontal spacing between items
+    // Still sufficient for icon + "100%" (monospaced digits) without clipping
+    let fixedWidth: CGFloat = 58
+        
+        // Create Disk status item (rightmost)
+        if prefs.showDisk {
+            diskStatusItem = NSStatusBar.system.statusItem(withLength: fixedWidth)
+            if let button = diskStatusItem?.button {
+                button.action = #selector(statusItemClicked)
+                button.target = self
+                button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+                button.isEnabled = true
+                button.alignment = .left
+            }
         }
-        statusItem.button?.isHidden = true
-        statusItem.view = custom
-        rebuildCustomView()
+        
+        // Create Memory status item (middle)
+        if prefs.showMemory {
+            memoryStatusItem = NSStatusBar.system.statusItem(withLength: fixedWidth)
+            if let button = memoryStatusItem?.button {
+                button.action = #selector(statusItemClicked)
+                button.target = self
+                button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+                button.isEnabled = true
+                button.alignment = .left
+            }
+        }
+        
+        // Create CPU status item (leftmost)
+        if prefs.showCPU {
+            cpuStatusItem = NSStatusBar.system.statusItem(withLength: fixedWidth)
+            if let button = cpuStatusItem?.button {
+                button.action = #selector(statusItemClicked)
+                button.target = self
+                button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+                button.isEnabled = true
+                button.alignment = .left
+            }
+        }
+        
+        // Update all displays
+        updateStatusItemDisplay()
+    }
+    
+    private func removeStatusItems() {
+        if let item = cpuStatusItem {
+            NSStatusBar.system.removeStatusItem(item)
+            cpuStatusItem = nil
+        }
+        if let item = memoryStatusItem {
+            NSStatusBar.system.removeStatusItem(item)
+            memoryStatusItem = nil
+        }
+        if let item = diskStatusItem {
+            NSStatusBar.system.removeStatusItem(item)
+            diskStatusItem = nil
+        }
+    }
+    
+    @objc private func statusItemClicked() {
+        guard let event = NSApp.currentEvent else { return }
+        
+        if event.type == .rightMouseUp {
+            showContextMenu()
+        } else {
+            togglePopover()
+        }
+    }
+    
+    private func togglePopover() {
+        if popover.isShown {
+            popover.performClose(nil)
+        } else {
+            showPopover()
+        }
+    }
+    
+    private func showPopover() {
+        // Determine which status item button to show the popover from
+        // Prefer CPU, then Memory, then Disk
+        var targetButton: NSStatusBarButton?
+        
+        if let cpuButton = cpuStatusItem?.button {
+            targetButton = cpuButton
+        } else if let memoryButton = memoryStatusItem?.button {
+            targetButton = memoryButton
+        } else if let diskButton = diskStatusItem?.button {
+            targetButton = diskButton
+        }
+        
+        guard let button = targetButton else { return }
+        
+        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
     }
     
     private func setupPopover() {
@@ -115,30 +222,9 @@ class MenuBarController: NSObject, ObservableObject {
             .merge(with: preferencesManager.$showMemory, preferencesManager.$showDisk)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
-                self?.updateStatusItemTitle()
+                self?.setupStatusItem() // Recreate status items when visibility changes
             }
             .store(in: &cancellables)
-    }
-    
-    @objc private func statusItemClicked() {
-        guard statusItem.button != nil else { return }
-        
-        let event = NSApp.currentEvent!
-        if event.type == .rightMouseUp {
-            showContextMenu()
-        } else {
-            togglePopover()
-        }
-    }
-    
-    private func togglePopover() {
-        guard let view = statusItem.view as? StatusItemView else { return }
-        
-        if popover.isShown {
-            popover.performClose(nil)
-        } else {
-            popover.show(relativeTo: view.bounds, of: view, preferredEdge: .minY)
-        }
     }
     
     private func showContextMenu() {
@@ -178,9 +264,21 @@ class MenuBarController: NSObject, ObservableObject {
         menu.addItem(NSMenuItem.separator())
         menu.addItem(NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q"))
         
-        // Show the menu relative to the custom view
-        guard let view = statusItem.view as? StatusItemView else { return }
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: view.bounds.height), in: view)
+        // Show the menu using any available status item
+        var targetStatusItem: NSStatusItem?
+        if let cpu = cpuStatusItem {
+            targetStatusItem = cpu
+        } else if let memory = memoryStatusItem {
+            targetStatusItem = memory
+        } else if let disk = diskStatusItem {
+            targetStatusItem = disk
+        }
+        
+        if let statusItem = targetStatusItem {
+            statusItem.menu = menu
+            statusItem.button?.performClick(nil)
+            statusItem.menu = nil
+        }
     }
     
     @objc private func formatSelected(_ sender: NSMenuItem) {
@@ -202,21 +300,82 @@ class MenuBarController: NSObject, ObservableObject {
         NSApplication.shared.terminate(nil)
     }
     
-    func updateStatusItemTitle() { rebuildCustomView() }
-
-    private func rebuildCustomView() {
-        guard let view = statusItem.view as? StatusItemView else { return }
-        let prefs = preferencesManager
-        var metrics: [StatusItemView.Metric] = []
+    func updateStatusItemTitle() { 
+        updateStatusItemDisplay() 
+    }
+    
+    private func updateStatusItemDisplay() {
         let stats = systemMonitor.currentStats
-        if prefs.showCPU { metrics.append(.init(kind: .cpu, percentage: stats.cpuUsage)) }
-        if prefs.showMemory { metrics.append(.init(kind: .mem, percentage: stats.memoryUsage.percentage)) }
-        if prefs.showDisk { metrics.append(.init(kind: .disk, percentage: stats.diskUsage.percentage)) }
+        let prefs = preferencesManager
         
-        // Only update the data - NO layout calculations
-        view.displayDetailed = (displayFormat == .detailed)
-        view.metrics = metrics
-        view.needsDisplay = true
+        // Update CPU status item
+        if prefs.showCPU, let button = cpuStatusItem?.button {
+            updateStatusButton(button, 
+                             iconName: "cpu", 
+                             value: stats.cpuUsage, 
+                             format: "%.0f%%")
+        }
+        
+        // Update Memory status item
+        if prefs.showMemory, let button = memoryStatusItem?.button {
+            updateStatusButton(button, 
+                             iconName: memoryIconName(), 
+                             value: stats.memoryUsage.percentage, 
+                             format: "%.0f%%")
+        }
+        
+        // Update Disk status item
+        if prefs.showDisk, let button = diskStatusItem?.button {
+            updateStatusButton(button, 
+                             iconName: "internaldrive", 
+                             value: stats.diskUsage.percentage, 
+                             format: "%.0f%%")
+        }
+    }
+    
+    private func updateStatusButton(_ button: NSStatusBarButton, iconName: String, value: Double, format: String) {
+        // Set icon (SF Symbol with template behavior)
+        if #available(macOS 11.0, *), let systemImage = NSImage(systemSymbolName: iconName, accessibilityDescription: nil) {
+            let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
+            let configuredImage = systemImage.withSymbolConfiguration(config) ?? systemImage
+            configuredImage.isTemplate = true // Ensure template behavior
+            button.image = configuredImage
+        } else {
+            // Fallback for older macOS
+            button.image = nil
+        }
+        
+        // Create fixed-width percentage text using explicit width without relying on trimmed leading spaces.
+        // Use FIGURE SPACE (U+2007) for padding – it has digit width in most fonts and is not trimmed by AppKit.
+        let percentage = Int(value.rounded())
+        let numberString = String(percentage)
+        let padCount = max(0, 3 - numberString.count)
+        let figureSpace = "\u{2007}" // figure space
+        let paddedNumber = String(repeating: figureSpace, count: padCount) + numberString
+        let formattedText = paddedNumber + "%" // Always 4 glyphs wide (3 digits/pads + %)
+
+        // Build attributed string with left alignment to stop centering shifts inside fixed-length button
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.alignment = .left
+        let font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .regular)
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .paragraphStyle: paragraph
+        ]
+        button.attributedTitle = NSAttributedString(string: formattedText, attributes: attributes)
+        button.font = font
+        
+        // Ensure image sits at the very left and text follows without re-centering
+        button.imagePosition = .imageLeading
+        if let cell = button.cell as? NSButtonCell {
+            cell.alignment = .left
+            cell.imagePosition = .imageLeading
+        }
+        
+        // Set tooltip
+        let metricName = iconName == "cpu" ? "CPU" : (iconName == "sdcard" || iconName == "memorychip" ? "Memory" : "Disk")
+        let tooltipPercentage = String(format: "%.1f%%", value)
+        button.toolTip = "\(metricName): \(tooltipPercentage)"
     }
 
     // Provide minimal user feedback when an action is disallowed (e.g., hiding last metric)

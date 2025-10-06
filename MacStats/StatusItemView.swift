@@ -24,6 +24,36 @@ final class StatusItemView: NSView {
     
     private let iconSize: CGFloat = 14
     private let fontSize: CGFloat = 12
+    
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setupAppearanceObserver()
+    }
+    
+    required init?(coder: NSCoder) {
+        super.init(coder: coder)
+        setupAppearanceObserver()
+    }
+    
+    deinit {
+        NotificationCenter.default.removeObserver(self)
+    }
+    
+    private func setupAppearanceObserver() {
+        // Listen for system appearance changes
+        DistributedNotificationCenter.default.addObserver(
+            self,
+            selector: #selector(appearanceDidChange),
+            name: Notification.Name("AppleInterfaceThemeChangedNotification"),
+            object: nil
+        )
+    }
+    
+    @objc private func appearanceDidChange() {
+        // Clear icon cache to force regeneration with new appearance
+        iconCache.removeAll()
+        needsDisplay = true
+    }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -77,7 +107,30 @@ final class StatusItemView: NSView {
             }
         case .disk: name = "internaldrive"
         }
-        let img = NSImage(systemSymbolName: name, accessibilityDescription: nil) ?? NSImage(size: NSSize(width: 16, height: 16))
+        
+        let img: NSImage
+        if #available(macOS 11.0, *), let systemImage = NSImage(systemSymbolName: name, accessibilityDescription: nil) {
+            // Create SF Symbol with explicit configuration for menu bar
+            let config = NSImage.SymbolConfiguration(pointSize: 16, weight: .medium)
+            let configuredImage = systemImage.withSymbolConfiguration(config) ?? systemImage
+            
+            img = configuredImage.copy() as! NSImage
+            img.isTemplate = true
+            
+            NSLog("MacStats: Created SF Symbol: \(name), isTemplate: \(img.isTemplate)")
+        } else {
+            // Fallback: create a simple template image
+            img = NSImage(size: NSSize(width: 16, height: 16))
+            img.lockFocus()
+            NSColor.labelColor.setFill()
+            let rect = NSRect(x: 2, y: 2, width: 12, height: 12)
+            rect.fill()
+            img.unlockFocus()
+            img.isTemplate = true
+            
+            NSLog("MacStats: Created fallback image for: \(name), isTemplate: \(img.isTemplate)")
+        }
+        
         iconCache[kind] = img
         return img
     }

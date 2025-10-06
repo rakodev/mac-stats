@@ -5,9 +5,13 @@ struct MacStatsApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     
     var body: some Scene {
-        Settings {
+        // Menu bar only app - need at least one scene but we'll hide it
+        WindowGroup {
             EmptyView()
         }
+        .windowStyle(.hiddenTitleBar)
+        .windowResizability(.contentSize)
+        .defaultSize(width: 1, height: 1)
     }
 }
 
@@ -18,6 +22,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Hide dock icon since this is a menu bar only app
         NSApp.setActivationPolicy(.accessory)
+        
+        // Hide any existing windows
+        NSApp.windows.forEach { window in
+            window.close()
+        }
         
         // Initialize menu bar controller
         menuBarController = MenuBarController()
