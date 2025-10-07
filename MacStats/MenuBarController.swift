@@ -5,7 +5,7 @@ import Combine
 // MARK: - Display Format Enum
 enum DisplayFormat: String, CaseIterable {
     case compact = "Compact"
-    case detailed = "Detailed"
+    case vertical = "Vertical"
 
     // Plain names (no preview text) per simplified UX
     var displayName: String { rawValue }
@@ -34,9 +34,8 @@ enum RefreshInterval: Double, CaseIterable {
 
 // MARK: - Menu Bar Controller
 class MenuBarController: NSObject, ObservableObject {
-    private var cpuStatusItem: NSStatusItem?
-    private var memoryStatusItem: NSStatusItem?
-    private var diskStatusItem: NSStatusItem?
+    private var statusItem: NSStatusItem?
+    private var customView: StatusItemView?
     
     var systemMonitor = SystemMonitor()
     public var preferencesManager = UserPreferencesManager.shared
@@ -75,77 +74,83 @@ class MenuBarController: NSObject, ObservableObject {
     }
     
     private func setupStatusItem() {
-        // Remove existing status items
+        // Remove existing status item
         removeStatusItems()
         
-        let prefs = preferencesManager
-        
-        // Create status items in reverse order since macOS displays them right-to-left
-        // This ensures left-to-right order: CPU, Memory, Disk
-        
-        // Calculate fixed width to accommodate icon + "100%" text
-    // Reduced from 65 -> 58 to tighten horizontal spacing between items
-    // Still sufficient for icon + "100%" (monospaced digits) without clipping
-    let fixedWidth: CGFloat = 58
-        
-        // Create Disk status item (rightmost)
-        if prefs.showDisk {
-            diskStatusItem = NSStatusBar.system.statusItem(withLength: fixedWidth)
-            if let button = diskStatusItem?.button {
-                button.action = #selector(statusItemClicked)
-                button.target = self
-                button.sendAction(on: [.leftMouseUp, .rightMouseUp])
-                button.isEnabled = true
-                button.alignment = .left
+        // Determine width based on layout style
+        let width: CGFloat = {
+            switch preferencesManager.displayFormat {
+            case .vertical:
+                return 90  // Narrower for vertical layout
+            default:
+                return 150 // Original width for compact horizontal layout
             }
+        }()
+        
+        // Create the unified status item
+        statusItem = NSStatusBar.system.statusItem(withLength: width)
+        
+        // Create custom view
+        let custom = StatusItemView(frame: NSRect(x: 0, y: 0, width: width, height: 24))
+        
+        // Set layout style based on display format
+        custom.layoutStyle = (preferencesManager.displayFormat == .vertical) ? .vertical : .horizontal
+        
+        // Set up click handler
+        custom.clickHandler = { [weak self] event in
+            self?.handleStatusItemClick(event)
         }
         
-        // Create Memory status item (middle)
-        if prefs.showMemory {
-            memoryStatusItem = NSStatusBar.system.statusItem(withLength: fixedWidth)
-            if let button = memoryStatusItem?.button {
-                button.action = #selector(statusItemClicked)
-                button.target = self
-                button.sendAction(on: [.leftMouseUp, .rightMouseUp])
-                button.isEnabled = true
-                button.alignment = .left
-            }
-        }
+        customView = custom
+        statusItem?.view = custom
         
-        // Create CPU status item (leftmost)
-        if prefs.showCPU {
-            cpuStatusItem = NSStatusBar.system.statusItem(withLength: fixedWidth)
-            if let button = cpuStatusItem?.button {
-                button.action = #selector(statusItemClicked)
-                button.target = self
-                button.sendAction(on: [.leftMouseUp, .rightMouseUp])
-                button.isEnabled = true
-                button.alignment = .left
-            }
-        }
-        
-        // Update all displays
+        // Update display with current metrics
         updateStatusItemDisplay()
     }
     
-    private func removeStatusItems() {
-        if let item = cpuStatusItem {
-            NSStatusBar.system.removeStatusItem(item)
-            cpuStatusItem = nil
+    private func updateStatusItemForFormat(_ format: DisplayFormat) {
+        guard let statusItem = statusItem, let customView = customView else {
+            print("MacStats: Status item or custom view is nil, recreating...")
+            setupStatusItem()
+            return
         }
-        if let item = memoryStatusItem {
-            NSStatusBar.system.removeStatusItem(item)
-            memoryStatusItem = nil
-        }
-        if let item = diskStatusItem {
-            NSStatusBar.system.removeStatusItem(item)
-            diskStatusItem = nil
-        }
+        
+        // Update width based on new format
+        let newWidth: CGFloat = {
+            switch format {
+            case .vertical:
+                return 90  // Narrower for vertical layout
+            default:
+                return 150 // Original width for compact horizontal layout
+            }
+        }()
+        
+        print("MacStats: Updating format to \(format), width: \(newWidth)")
+        
+        // Update the status item length first
+        statusItem.length = newWidth
+        
+        // Update the frame
+        customView.frame = NSRect(x: 0, y: 0, width: newWidth, height: 24)
+        
+        // Update the custom view's layout properties
+        customView.layoutStyle = (format == .vertical) ? .vertical : .horizontal
+        
+        // Clear icon cache to ensure proper rendering with new layout
+        customView.clearIconCache()
+        
+        // Force a redraw
+        customView.needsDisplay = true
+        
+        print("MacStats: Successfully updated status item to format: \(format), width: \(newWidth)")
     }
     
-    @objc private func statusItemClicked() {
-        guard let event = NSApp.currentEvent else { return }
-        
+    private func removeStatusItems() {
+        statusItem = nil
+        customView = nil
+    }
+    
+    private func handleStatusItemClick(_ event: NSEvent) {
         if event.type == .rightMouseUp {
             showContextMenu()
         } else {
@@ -162,21 +167,19 @@ class MenuBarController: NSObject, ObservableObject {
     }
     
     private func showPopover() {
-        // Determine which status item button to show the popover from
-        // Prefer CPU, then Memory, then Disk
-        var targetButton: NSStatusBarButton?
+        guard let view = customView else { return }
+        popover.show(relativeTo: view.bounds, of: view, preferredEdge: .minY)
+    }
+    
+    private func showContextMenu() {
+        let menu = NSMenu()
         
-        if let cpuButton = cpuStatusItem?.button {
-            targetButton = cpuButton
-        } else if let memoryButton = memoryStatusItem?.button {
-            targetButton = memoryButton
-        } else if let diskButton = diskStatusItem?.button {
-            targetButton = diskButton
-        }
+        menu.addItem(withTitle: "Settings...", action: #selector(showSettingsWindow), keyEquivalent: "")
+        menu.addItem(NSMenuItem.separator())
+        menu.addItem(withTitle: "Quit MacStats", action: #selector(quitApp), keyEquivalent: "q")
         
-        guard let button = targetButton else { return }
-        
-        popover.show(relativeTo: button.bounds, of: button, preferredEdge: .minY)
+        guard let view = customView else { return }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: view.bounds.height), in: view)
     }
     
     private func setupPopover() {
@@ -227,65 +230,14 @@ class MenuBarController: NSObject, ObservableObject {
             .store(in: &cancellables)
     }
     
-    private func showContextMenu() {
-        let menu = NSMenu()
-        
-        // Display Format submenu
-        let formatMenu = NSMenu()
-        for format in DisplayFormat.allCases {
-            let item = NSMenuItem(title: format.rawValue, action: #selector(formatSelected(_:)), keyEquivalent: "")
-            item.target = self
-            item.tag = format.hashValue
-            item.state = format == displayFormat ? .on : .off
-            formatMenu.addItem(item)
-        }
-        
-        let formatMenuItem = NSMenuItem(title: "Display Format", action: nil, keyEquivalent: "")
-        formatMenuItem.submenu = formatMenu
-        menu.addItem(formatMenuItem)
-        
-        menu.addItem(NSMenuItem.separator())
-        
-        // Refresh interval submenu
-        let refreshMenu = NSMenu()
-        let intervals: [Double] = [1.0, 2.0, 5.0, 10.0]
-        for interval in intervals {
-            let item = NSMenuItem(title: "\(Int(interval))s", action: #selector(refreshIntervalSelected(_:)), keyEquivalent: "")
-            item.target = self
-            item.tag = Int(interval)
-            item.state = interval == refreshInterval.rawValue ? .on : .off
-            refreshMenu.addItem(item)
-        }
-        
-        let refreshMenuItem = NSMenuItem(title: "Refresh Interval", action: nil, keyEquivalent: "")
-        refreshMenuItem.submenu = refreshMenu
-        menu.addItem(refreshMenuItem)
-        
-        menu.addItem(NSMenuItem.separator())
-        menu.addItem(NSMenuItem(title: "Quit", action: #selector(quitApp), keyEquivalent: "q"))
-        
-        // Show the menu using any available status item
-        var targetStatusItem: NSStatusItem?
-        if let cpu = cpuStatusItem {
-            targetStatusItem = cpu
-        } else if let memory = memoryStatusItem {
-            targetStatusItem = memory
-        } else if let disk = diskStatusItem {
-            targetStatusItem = disk
-        }
-        
-        if let statusItem = targetStatusItem {
-            statusItem.menu = menu
-            statusItem.button?.performClick(nil)
-            statusItem.menu = nil
-        }
-    }
-    
     @objc private func formatSelected(_ sender: NSMenuItem) {
         if let format = DisplayFormat.allCases.first(where: { $0.hashValue == sender.tag }) {
+            print("MacStats: Switching to format: \(format)")
             displayFormat = format
             preferencesManager.displayFormat = format
-            updateStatusItemTitle()
+            
+            // Update the existing status item instead of recreating it
+            updateStatusItemForFormat(format)
         }
     }
     
@@ -305,77 +257,54 @@ class MenuBarController: NSObject, ObservableObject {
     }
     
     private func updateStatusItemDisplay() {
+        guard let customView = customView else { return }
+        
         let stats = systemMonitor.currentStats
         let prefs = preferencesManager
         
-        // Update CPU status item
-        if prefs.showCPU, let button = cpuStatusItem?.button {
-            updateStatusButton(button, 
-                             iconName: "cpu", 
-                             value: stats.cpuUsage, 
-                             format: "%.0f%%")
+        var metrics: [StatusItemView.Metric] = []
+        
+        // Build metrics array based on enabled metrics
+        if prefs.showCPU {
+            metrics.append(StatusItemView.Metric(kind: .cpu, percentage: stats.cpuUsage))
+        }
+        if prefs.showMemory {
+            metrics.append(StatusItemView.Metric(kind: .mem, percentage: stats.memoryUsage.percentage))
+        }
+        if prefs.showDisk {
+            metrics.append(StatusItemView.Metric(kind: .disk, percentage: stats.diskUsage.percentage))
         }
         
-        // Update Memory status item
-        if prefs.showMemory, let button = memoryStatusItem?.button {
-            updateStatusButton(button, 
-                             iconName: memoryIconName(), 
-                             value: stats.memoryUsage.percentage, 
-                             format: "%.0f%%")
-        }
+        // Update the custom view metrics and layout
+        customView.metrics = metrics
+        customView.layoutStyle = (prefs.displayFormat == .vertical) ? .vertical : .horizontal
         
-        // Update Disk status item
-        if prefs.showDisk, let button = diskStatusItem?.button {
-            updateStatusButton(button, 
-                             iconName: "internaldrive", 
-                             value: stats.diskUsage.percentage, 
-                             format: "%.0f%%")
-        }
+        // Update width and frame if needed, but don't recreate the status item
+        let expectedWidth: CGFloat = {
+            switch prefs.displayFormat {
+            case .vertical:
+                return 90  // Narrower for vertical layout
+            default:
+                return 150 // Original width for compact horizontal layout
+            }
+        }()
+        
+        // Update status item length and custom view frame
+        statusItem?.length = expectedWidth
+        customView.frame = NSRect(x: 0, y: 0, width: expectedWidth, height: 24)
+        
+        // Force redraw
+        customView.needsDisplay = true
     }
     
-    private func updateStatusButton(_ button: NSStatusBarButton, iconName: String, value: Double, format: String) {
-        // Set icon (SF Symbol with template behavior)
-        if #available(macOS 11.0, *), let systemImage = NSImage(systemSymbolName: iconName, accessibilityDescription: nil) {
-            let config = NSImage.SymbolConfiguration(pointSize: 14, weight: .medium)
-            let configuredImage = systemImage.withSymbolConfiguration(config) ?? systemImage
-            configuredImage.isTemplate = true // Ensure template behavior
-            button.image = configuredImage
-        } else {
-            // Fallback for older macOS
-            button.image = nil
-        }
-        
-        // Create fixed-width percentage text using explicit width without relying on trimmed leading spaces.
-        // Use FIGURE SPACE (U+2007) for padding – it has digit width in most fonts and is not trimmed by AppKit.
-        let percentage = Int(value.rounded())
-        let numberString = String(percentage)
-        let padCount = max(0, 3 - numberString.count)
-        let figureSpace = "\u{2007}" // figure space
-        let paddedNumber = String(repeating: figureSpace, count: padCount) + numberString
-        let formattedText = paddedNumber + "%" // Always 4 glyphs wide (3 digits/pads + %)
-
-        // Build attributed string with left alignment to stop centering shifts inside fixed-length button
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.alignment = .left
-        let font = NSFont.monospacedDigitSystemFont(ofSize: 13, weight: .regular)
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: font,
-            .paragraphStyle: paragraph
-        ]
-        button.attributedTitle = NSAttributedString(string: formattedText, attributes: attributes)
-        button.font = font
-        
-        // Ensure image sits at the very left and text follows without re-centering
-        button.imagePosition = .imageLeading
-        if let cell = button.cell as? NSButtonCell {
-            cell.alignment = .left
-            cell.imagePosition = .imageLeading
-        }
-        
-        // Set tooltip
-        let metricName = iconName == "cpu" ? "CPU" : (iconName == "sdcard" || iconName == "memorychip" ? "Memory" : "Disk")
-        let tooltipPercentage = String(format: "%.1f%%", value)
-        button.toolTip = "\(metricName): \(tooltipPercentage)"
+    @objc private func showSettingsWindow() {
+        // Implementation for showing settings window would go here
+        // For now, just show a placeholder alert
+        let alert = NSAlert()
+        alert.messageText = "Settings"
+        alert.informativeText = "Settings window not yet implemented"
+        alert.alertStyle = .informational
+        alert.runModal()
     }
 
     // Provide minimal user feedback when an action is disallowed (e.g., hiding last metric)
