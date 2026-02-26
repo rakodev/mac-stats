@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import Cocoa
+import ServiceManagement
 
 // MARK: - User Preferences Manager
 class UserPreferencesManager: ObservableObject {
@@ -57,7 +58,7 @@ class UserPreferencesManager: ObservableObject {
         let savedInterval = UserDefaults.standard.double(forKey: "refreshInterval")
         self.refreshInterval = savedInterval > 0 ? savedInterval : 2.0
         
-        self.launchAtLogin = UserDefaults.standard.bool(forKey: "launchAtLogin")
+        self.launchAtLogin = UserDefaults.standard.object(forKey: "launchAtLogin") as? Bool ?? true
         self.showInDock = UserDefaults.standard.bool(forKey: "showInDock")
         self.showCPU = UserDefaults.standard.object(forKey: "showCPU") as? Bool ?? true
         self.showMemory = UserDefaults.standard.object(forKey: "showMemory") as? Bool ?? true
@@ -65,9 +66,18 @@ class UserPreferencesManager: ObservableObject {
     }
     
     private func updateLaunchAtLogin() {
-        // Implementation for launch at login would go here
-        // This requires additional setup with LoginItems or LaunchAgents
-        print("Launch at login: \(launchAtLogin)")
+        let shouldEnable = launchAtLogin
+        DispatchQueue.global(qos: .utility).async {
+            do {
+                if shouldEnable {
+                    try SMAppService.mainApp.register()
+                } else {
+                    try SMAppService.mainApp.unregister()
+                }
+            } catch {
+                print("Failed to update login item: \(error.localizedDescription)")
+            }
+        }
     }
     
     private func updateDockVisibility() {
@@ -83,7 +93,7 @@ class UserPreferencesManager: ObservableObject {
     func resetToDefaults() {
         displayFormat = .compact
         refreshInterval = 2.0
-        launchAtLogin = false
+        launchAtLogin = true
         showInDock = false
         showCPU = true
         showMemory = true

@@ -16,21 +16,32 @@ You shouldn’t need a heavy multi‑window monitor just to glance at CPU and me
 * Accurate memory calculation aligned with Activity Monitor (App Memory perspective)
 * SwiftUI native UI, minimal footprint, universal binary (Apple Silicon + Intel)
 
-## Quick Start
+## Installation
+
+### Homebrew (Recommended)
 
 ```bash
-git clone https://github.com/yourusername/mac-stats.git
-cd mac-stats
-make run   # or: make dev
+brew tap rakodev/tap
+brew install --cask macstats
 ```
 
-The status item appears in the menu bar. Left‑click for the popover (detailed view + settings). Right‑click for quick format / refresh changes.
+Or in one command:
 
-## Install (Binary)
- 
-1. Download the latest release (DMG or ZIP)
-2. Move `MacStats.app` to Applications
-3. Launch (Spotlight or Applications)
+```bash
+brew install --cask rakodev/tap/macstats
+```
+
+### Direct Download
+
+Download the latest release from [GitHub Releases](https://github.com/rakodev/mac-stats/releases):
+
+1. Download `MacStats-Installer.dmg` (or `MacStats.zip`)
+2. Open the DMG and drag MacStats to Applications
+3. Launch MacStats from Applications or Spotlight
+
+## Quick Start
+
+The status item appears in the menu bar. Left‑click for the popover (detailed view + settings). Right‑click for quick format / refresh changes.
 
 ## Display Formats
 
@@ -53,23 +64,41 @@ macOS 13.0+, Xcode 15+ (to build).
 ## Build From Source
 
 ```bash
-make build     # release artifacts
-make dev       # fast debug build
-open MacStats.xcodeproj # build/run inside Xcode (⌘+R)
+git clone https://github.com/rakodev/mac-stats.git
+cd mac-stats
+make run       # build and run (development)
+make build     # release build (signed)
+make release   # full release: build, sign, notarize, GitHub release, Homebrew update
 ```
 
-Artifacts (release): unsigned .app, optional zip / dmg (if create-dmg installed).
+See [DISTRIBUTION.md](DISTRIBUTION.md) for signing and notarization setup.
 
-defaults delete com.macstats.app || true
+## Update
+
+### Homebrew
+
+```bash
+brew update
+brew upgrade --cask macstats
+```
+
+### Direct Download
+
+Download the latest version from [GitHub Releases](https://github.com/rakodev/mac-stats/releases) and replace the app in your Applications folder.
+
 ## Uninstall
 
+If installed via Homebrew:
 
- 
-Quit the app, then remove:
+```bash
+brew uninstall --cask macstats
+```
+
+If installed manually, quit the app and run:
 
 ```bash
 rm -rf /Applications/MacStats.app
-defaults delete com.macstats.app || true
+defaults delete com.macstats.app 2>/dev/null || true
 ```
 
 ## Project Structure

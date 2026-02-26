@@ -1,4 +1,5 @@
 import SwiftUI
+import ServiceManagement
 
 @main
 struct MacStatsApp: App {
@@ -30,6 +31,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         
         // Initialize menu bar controller
         menuBarController = MenuBarController()
+
+        // Register login item on first launch if enabled
+        if UserPreferencesManager.shared.launchAtLogin {
+            DispatchQueue.global(qos: .utility).async {
+                try? SMAppService.mainApp.register()
+            }
+        }
         
         // Prevent app from terminating when last window closes
         NSApp.delegate = self
