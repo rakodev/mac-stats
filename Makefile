@@ -1,6 +1,6 @@
 # Makefile for MacStats
 
-.PHONY: all build dev clean install run help
+.PHONY: all build dev clean install run release help
 
 # Default target
 all: build
@@ -43,6 +43,11 @@ install:
 	fi
 	@echo "✅ Dependencies check completed!"
 
+# Build, sign, notarize, and create a GitHub release
+release:
+	@echo "📦 Building and releasing MacStats..."
+	@./build.sh release
+
 # Show help
 help:
 	@echo "MacStats Build System"
@@ -51,6 +56,7 @@ help:
 	@echo "  build    - Build for release distribution"
 	@echo "  dev      - Build for development"
 	@echo "  run      - Clean build and run the application"
+	@echo "  release  - Build, sign, notarize, and create GitHub release"
 	@echo "  clean    - Clean build artifacts"
 	@echo "  install  - Check and install dependencies"
 	@echo "  help     - Show this help message"
