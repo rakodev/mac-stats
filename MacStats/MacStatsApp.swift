@@ -32,7 +32,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Initialize menu bar controller
         menuBarController = MenuBarController()
 
-        // Register login item on first launch if enabled
+        // On upgrade (or first launch), re-enable launch at login
+        let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+        let lastVersion = UserDefaults.standard.string(forKey: "lastAppVersion") ?? ""
+        if currentVersion != lastVersion {
+            UserDefaults.standard.set(currentVersion, forKey: "lastAppVersion")
+            UserPreferencesManager.shared.launchAtLogin = true
+        }
+
+        // Register login item if enabled
         if UserPreferencesManager.shared.launchAtLogin {
             DispatchQueue.global(qos: .utility).async {
                 try? SMAppService.mainApp.register()

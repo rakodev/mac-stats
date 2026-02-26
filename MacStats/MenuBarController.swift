@@ -533,6 +533,11 @@ struct MenuBarPopoverView: View {
                             .pickerStyle(.menu)
                             .frame(maxWidth: 100)
                         }
+                        Toggle("Launch at login", isOn: Binding(
+                            get: { controller.preferencesManager.launchAtLogin },
+                            set: { controller.preferencesManager.launchAtLogin = $0 }
+                        ))
+                        .font(.caption)
                         Divider()
                         VStack(alignment: .leading, spacing: 4) {
                             Text("Visible Metrics:")
