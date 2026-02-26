@@ -54,7 +54,7 @@ class MenuBarController: NSObject, ObservableObject {
     // Published properties for SwiftUI binding
     @Published var displayFormat: DisplayFormat = .compact
     @Published var refreshInterval: RefreshInterval = .twoSeconds
-    @Published var showSettings: Bool = true
+    @Published var showSettings: Bool = false
     
     override init() {
         super.init()
@@ -379,7 +379,7 @@ struct MenuBarPopoverView: View {
     }
     
     var body: some View {
-        VStack(alignment: .leading, spacing: 15) {
+        VStack(alignment: .leading, spacing: 8) {
             // Header with settings toggle
             HStack(alignment: .center) {
                 LinkHeader()
@@ -391,198 +391,180 @@ struct MenuBarPopoverView: View {
                 .buttonStyle(.plain)
                 .help("Toggle settings visibility")
             }
-            
+
             Divider()
-            
+
             // CPU Usage
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Image(systemName: "cpu")
+                        .font(.caption)
                         .foregroundColor(.orange)
-                    Text("CPU Usage")
-                        .font(.subheadline)
+                    Text("CPU")
+                        .font(.caption)
                         .fontWeight(.medium)
                     Spacer()
                     Text(String(format: "%.1f%%", systemMonitor.currentStats.cpuUsage))
-                        .font(.subheadline)
+                        .font(.caption)
                         .fontWeight(.semibold)
                 }
-                
                 ProgressView(value: systemMonitor.currentStats.cpuUsage / 100.0)
                     .progressViewStyle(LinearProgressViewStyle(tint: .orange))
+                    .scaleEffect(y: 0.8)
             }
             .contentShape(Rectangle())
             .onTapGesture { MenuBarController.openActivityMonitorCPU() }
             .help("Click to open Activity Monitor CPU tab")
             .opacity(controller.preferencesManager.showCPU ? 1 : 0.25)
-            .overlay(Group { if !controller.preferencesManager.showCPU { Text("Hidden").font(.caption2).foregroundColor(.secondary) } })
-            
+
             // Memory Usage
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Image(systemName: memoryIconName())
+                        .font(.caption)
                         .foregroundColor(.green)
-                    Text("Memory Usage")
-                        .font(.subheadline)
+                    Text("Memory")
+                        .font(.caption)
                         .fontWeight(.medium)
                     Spacer()
+                    Text("\(systemMonitor.currentStats.memoryUsage.formattedUsed) / \(systemMonitor.currentStats.memoryUsage.formattedTotal)")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
                     Text(String(format: "%.1f%%", systemMonitor.currentStats.memoryUsage.percentage))
-                        .font(.subheadline)
+                        .font(.caption)
                         .fontWeight(.semibold)
                 }
-                
                 ProgressView(value: systemMonitor.currentStats.memoryUsage.percentage / 100.0)
                     .progressViewStyle(LinearProgressViewStyle(tint: .green))
-                
-                HStack {
-                    Text(systemMonitor.currentStats.memoryUsage.formattedUsed)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    Text("of \(systemMonitor.currentStats.memoryUsage.formattedTotal)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
+                    .scaleEffect(y: 0.8)
             }
             .contentShape(Rectangle())
             .onTapGesture { MenuBarController.openActivityMonitorMemory() }
             .help("Click to open Activity Monitor Memory tab")
             .opacity(controller.preferencesManager.showMemory ? 1 : 0.25)
-            .overlay(Group { if !controller.preferencesManager.showMemory { Text("Hidden").font(.caption2).foregroundColor(.secondary) } })
-            
-            Divider()
-            
+
             // Disk Usage
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 4) {
                 let disk = systemMonitor.currentStats.diskUsage
                 let pct = disk.percentage
                 let color: Color = pct >= 90 ? .red : (pct >= 80 ? .orange : .blue)
                 HStack {
                     Image(systemName: "internaldrive")
+                        .font(.caption)
                         .foregroundColor(color)
-                    Text("Disk Usage")
-                        .font(.subheadline)
+                    Text("Disk")
+                        .font(.caption)
                         .fontWeight(.medium)
                     Spacer()
+                    Text("\(disk.formattedUsed) / \(disk.formattedTotal)")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
                     Text(String(format: "%.1f%%", pct))
-                        .font(.subheadline)
+                        .font(.caption)
                         .fontWeight(.semibold)
                         .foregroundColor(color)
                 }
                 ProgressView(value: pct / 100.0)
                     .progressViewStyle(LinearProgressViewStyle(tint: color))
-                HStack {
-                    Text(disk.formattedUsed)
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    Spacer()
-                    Text("of \(disk.formattedTotal)")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
+                    .scaleEffect(y: 0.8)
             }
             .contentShape(Rectangle())
             .onTapGesture { MenuBarController.openActivityMonitorDisk() }
             .help("Click to open Activity Monitor Disk tab")
             .opacity(controller.preferencesManager.showDisk ? 1 : 0.25)
-            .overlay(Group { if !controller.preferencesManager.showDisk { Text("Hidden").font(.caption2).foregroundColor(.secondary) } })
-            
+
             // Settings (collapsible)
             if controller.showSettings {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Settings")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                    
-                    VStack(alignment: .leading, spacing: 8) {
-                        HStack {
-                            Text("Display Format:")
-                                .font(.caption)
-                                .frame(width: 90, alignment: .leading)
-                            Picker("", selection: Binding(
-                                get: { controller.displayFormat },
-                                set: { newFormat in
-                                    controller.displayFormat = newFormat
-                                    controller.preferencesManager.displayFormat = newFormat
-                                    controller.updateStatusItemTitle()
-                                }
-                            )) {
-                                ForEach(DisplayFormat.allCases, id: \.self) { format in
-                                    Text(format.displayName).tag(format)
-                                }
+                Divider()
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("Format:")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .frame(width: 55, alignment: .leading)
+                        Picker("", selection: Binding(
+                            get: { controller.displayFormat },
+                            set: { newFormat in
+                                controller.displayFormat = newFormat
+                                controller.preferencesManager.displayFormat = newFormat
+                                controller.updateStatusItemTitle()
                             }
-                            .pickerStyle(.menu)
-                            .frame(maxWidth: 140)
-                        }
-                        HStack {
-                            Text("Refresh Rate:")
-                                .font(.caption)
-                                .frame(width: 90, alignment: .leading)
-                            Picker("", selection: Binding(
-                                get: { controller.refreshInterval },
-                                set: { newInterval in
-                                    controller.refreshInterval = newInterval
-                                    controller.preferencesManager.refreshInterval = newInterval.rawValue
-                                    controller.systemMonitor.updateRefreshInterval(newInterval.rawValue)
-                                }
-                            )) {
-                                ForEach(RefreshInterval.allCases, id: \.self) { interval in
-                                    Text(interval.displayName).tag(interval)
-                                }
+                        )) {
+                            ForEach(DisplayFormat.allCases, id: \.self) { format in
+                                Text(format.displayName).tag(format)
                             }
-                            .pickerStyle(.menu)
-                            .frame(maxWidth: 100)
                         }
-                        Toggle("Launch at login", isOn: Binding(
-                            get: { controller.preferencesManager.launchAtLogin },
-                            set: { controller.preferencesManager.launchAtLogin = $0 }
-                        ))
-                        .font(.caption)
-                        Divider()
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Visible Metrics:")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                            Toggle("CPU", isOn: Binding(
-                                get: { controller.preferencesManager.showCPU },
-                                set: { newValue in
-                                    let prefs = controller.preferencesManager
-                                    if !newValue && !prefs.showMemory && !prefs.showDisk {
-                                        controller.showLastMetricWarning(); return
-                                    }
-                                    prefs.showCPU = newValue
-                                    controller.updateStatusItemTitle()
-                                }
-                            ))
-                            Toggle("Memory", isOn: Binding(
-                                get: { controller.preferencesManager.showMemory },
-                                set: { newValue in
-                                    let prefs = controller.preferencesManager
-                                    if !newValue && !prefs.showCPU && !prefs.showDisk {
-                                        controller.showLastMetricWarning(); return
-                                    }
-                                    prefs.showMemory = newValue
-                                    controller.updateStatusItemTitle()
-                                }
-                            ))
-                            Toggle("Disk", isOn: Binding(
-                                get: { controller.preferencesManager.showDisk },
-                                set: { newValue in
-                                    let prefs = controller.preferencesManager
-                                    if !newValue && !prefs.showCPU && !prefs.showMemory {
-                                        controller.showLastMetricWarning(); return
-                                    }
-                                    prefs.showDisk = newValue
-                                    controller.updateStatusItemTitle()
-                                }
-                            ))
-                        }
+                        .pickerStyle(.menu)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
+                    HStack {
+                        Text("Refresh:")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .frame(width: 55, alignment: .leading)
+                        Picker("", selection: Binding(
+                            get: { controller.refreshInterval },
+                            set: { newInterval in
+                                controller.refreshInterval = newInterval
+                                controller.preferencesManager.refreshInterval = newInterval.rawValue
+                                controller.systemMonitor.updateRefreshInterval(newInterval.rawValue)
+                            }
+                        )) {
+                            ForEach(RefreshInterval.allCases, id: \.self) { interval in
+                                Text(interval.displayName).tag(interval)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    HStack(spacing: 12) {
+                        Toggle("CPU", isOn: Binding(
+                            get: { controller.preferencesManager.showCPU },
+                            set: { newValue in
+                                let prefs = controller.preferencesManager
+                                if !newValue && !prefs.showMemory && !prefs.showDisk {
+                                    controller.showLastMetricWarning(); return
+                                }
+                                prefs.showCPU = newValue
+                                controller.updateStatusItemTitle()
+                            }
+                        ))
+                        Toggle("Memory", isOn: Binding(
+                            get: { controller.preferencesManager.showMemory },
+                            set: { newValue in
+                                let prefs = controller.preferencesManager
+                                if !newValue && !prefs.showCPU && !prefs.showDisk {
+                                    controller.showLastMetricWarning(); return
+                                }
+                                prefs.showMemory = newValue
+                                controller.updateStatusItemTitle()
+                            }
+                        ))
+                        Toggle("Disk", isOn: Binding(
+                            get: { controller.preferencesManager.showDisk },
+                            set: { newValue in
+                                let prefs = controller.preferencesManager
+                                if !newValue && !prefs.showCPU && !prefs.showMemory {
+                                    controller.showLastMetricWarning(); return
+                                }
+                                prefs.showDisk = newValue
+                                controller.updateStatusItemTitle()
+                            }
+                        ))
+                    }
+                    .font(.caption)
+                    .toggleStyle(.checkbox)
+                    Toggle("Launch at login", isOn: Binding(
+                        get: { controller.preferencesManager.launchAtLogin },
+                        set: { controller.preferencesManager.launchAtLogin = $0 }
+                    ))
+                    .font(.caption)
+                    .toggleStyle(.checkbox)
                 }
             }
         }
-        .padding()
-        .frame(width: 300)
+        .padding(10)
+        .frame(width: 280)
     }
 }
 
