@@ -50,9 +50,8 @@ class UserPreferencesManager: ObservableObject {
            let format = DisplayFormat(rawValue: savedFormat) {
             self.displayFormat = format
         } else {
-            // If legacy value (CPU Only / Memory Only) existed, fall back to compact
-            self.displayFormat = .compact
-            UserDefaults.standard.set(DisplayFormat.compact.rawValue, forKey: "displayFormat")
+            self.displayFormat = .vertical
+            UserDefaults.standard.set(DisplayFormat.vertical.rawValue, forKey: "displayFormat")
         }
         
         let savedInterval = UserDefaults.standard.double(forKey: "refreshInterval")
