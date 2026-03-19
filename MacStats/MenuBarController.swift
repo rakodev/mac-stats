@@ -41,6 +41,7 @@ class MenuBarController: NSObject, ObservableObject {
     public var preferencesManager = UserPreferencesManager.shared
     
     private var popover: NSPopover!
+    private var globalClickMonitor: Any?
     private var cancellables = Set<AnyCancellable>()
     
     // Helper function to get memory icon name
@@ -70,6 +71,9 @@ class MenuBarController: NSObject, ObservableObject {
     }
     
     deinit {
+        if let monitor = globalClickMonitor {
+            NSEvent.removeMonitor(monitor)
+        }
         removeStatusItems()
     }
     
@@ -160,15 +164,28 @@ class MenuBarController: NSObject, ObservableObject {
     
     private func togglePopover() {
         if popover.isShown {
-            popover.performClose(nil)
+            closePopover()
         } else {
             showPopover()
         }
     }
-    
+
     private func showPopover() {
         guard let view = customView else { return }
         popover.show(relativeTo: view.bounds, of: view, preferredEdge: .minY)
+        popover.contentViewController?.view.window?.makeKey()
+
+        globalClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            self?.closePopover()
+        }
+    }
+
+    private func closePopover() {
+        popover.performClose(nil)
+        if let monitor = globalClickMonitor {
+            NSEvent.removeMonitor(monitor)
+            globalClickMonitor = nil
+        }
     }
     
     private func showContextMenu() {
