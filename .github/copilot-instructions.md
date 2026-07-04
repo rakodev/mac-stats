@@ -84,5 +84,19 @@ Purpose: A tiny macOS menu bar utility that shows current CPU, Memory, and aggre
 - Offer enum-based approach over raw strings for new user-facing modes
 - Consider menu bar width impact before adding new text
 
+## Task Tracking
+
+Use the docs folder to track product and engineering work:
+
+- `docs/BACKLOG.md` - Committed todo tasks with priority, evidence, acceptance criteria, and verification.
+- `docs/FOLLOWUPS.md` - Ideas or possible future improvements that are not ready for the backlog yet.
+- `docs/BACKLOG_ARCHIVE.md` - Completed backlog tasks, including date, summary, and verification.
+
+Workflow:
+1. Add actionable issues found during implementation or review to `docs/BACKLOG.md`.
+2. Add lower-confidence ideas or later enhancements to `docs/FOLLOWUPS.md`.
+3. When a backlog item is completed, move it to `docs/BACKLOG_ARCHIVE.md`.
+4. Keep backlog items concrete: affected area, why it matters, what done means, and how to verify it.
+
 ## License
 MIT – contributions should keep code lean and focused.
