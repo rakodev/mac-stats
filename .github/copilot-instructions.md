@@ -1,9 +1,9 @@
 # Copilot Context Guide: MacStats
 
-Purpose: A tiny macOS menu bar utility that shows current CPU, Memory, aggregate Disk usage, and optional CPU temperature with minimal overhead and optional detail popover.
+Purpose: A tiny macOS menu bar utility that shows current CPU, Memory, aggregate Disk usage, and optional system health metrics with minimal overhead and optional detail popover.
 
 ## Core Goals
-- Always-visible, glanceable CPU, Memory, and Disk % (main volume) in menu bar, with optional CPU temperature
+- Always-visible, glanceable CPU, Memory, and Disk % (main volume) in menu bar, with optional CPU temperature, Battery, Thermal Pressure, Memory Pressure, and Uptime
 - Accurate + stable values (aligned with Activity Monitor for memory %)
 - Lightweight (low CPU usage, minimal allocations, tiny binary)
 - Intuitive: left click = detail + settings, right click = quick menu
@@ -19,11 +19,15 @@ Purpose: A tiny macOS menu bar utility that shows current CPU, Memory, aggregate
 ## Architecture Overview
 - `MacStatsApp.swift`: App entry, sets up controller singletons
 - `MenuBarController.swift`: Owns `NSStatusItem`, SwiftUI popover, formatting, Activity Monitor integration (AppleScript launch helpers)
-- `SystemMonitor.swift`: Sampling logic for CPU + Memory + Disk + CPU temperature
+- `SystemMonitor.swift`: Sampling logic for CPU + Memory + Disk + optional health metrics
   - CPU via `host_processor_info` diff between ticks (user, system, idle)
   - Memory via `vm_statistics64` building an App Memory style usage
   - Disk via FileManager filesystem attributes (total, free) main volume
   - Temperature via best-effort IOHID PMU CPU die sensors on Apple Silicon, with AppleSMC CPU sensor fallback on Intel; returns unavailable when unsupported
+  - Battery via IOKit power sources, internal battery only
+  - Thermal Pressure via `ProcessInfo.thermalState`
+  - Memory Pressure via Dispatch memory pressure events
+  - Uptime via `ProcessInfo.systemUptime`
 - `UserPreferences.swift`: `UserPreferencesManager` singleton, `@Published` properties persisted in `UserDefaults` (display format, refresh interval, theme)
 - `ContentView.swift`: SwiftUI view composition used inside the popover
 

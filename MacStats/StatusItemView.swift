@@ -3,8 +3,8 @@ import Cocoa
 // Fixed pixel slot layout to prevent jitter while metrics update
 final class StatusItemView: NSView {
     struct Metric {
-        enum Kind { case cpu, mem, disk, temp }
-        enum ValueStyle { case percentage, temperature(TemperatureUnit) }
+        enum Kind { case cpu, mem, disk, temp, battery, thermalPressure, memoryPressure, uptime }
+        enum ValueStyle { case percentage, temperature(TemperatureUnit), text(String) }
 
         let kind: Kind
         let value: Double?
@@ -27,6 +27,12 @@ final class StatusItemView: NSView {
             self.valueStyle = .temperature(unit)
         }
 
+        init(kind: Kind, text: String) {
+            self.kind = kind
+            self.value = nil
+            self.valueStyle = .text(text)
+        }
+
         func formattedValue(horizontal: Bool) -> String {
             switch valueStyle {
             case .percentage:
@@ -37,6 +43,8 @@ final class StatusItemView: NSView {
                 guard let value else { return "--\(unit.symbol)" }
                 let rounded = Int(round(value))
                 return horizontal ? String(format: "%3d%@", rounded, unit.symbol) : String(format: "%2d%@", rounded, unit.symbol)
+            case .text(let text):
+                return horizontal ? String(format: "%4@", text) : text
             }
         }
     }
@@ -62,22 +70,8 @@ final class StatusItemView: NSView {
         }
     }
 
-    // ABSOLUTELY FIXED LAYOUT - these positions NEVER change
-    // Horizontal layout: icons with text beside them
-    private let horizontalPositions: [(iconX: CGFloat, textX: CGFloat)] = [
-        (iconX: 2, textX: 18),     // CPU position
-        (iconX: 50, textX: 66),    // Memory position  
-        (iconX: 98, textX: 114),   // Disk position
-        (iconX: 146, textX: 162)   // Temperature position
-    ]
-    
-    // Vertical layout: labels above percentages, very compact horizontal spacing
-    private let verticalPositions: [(labelX: CGFloat, valueX: CGFloat)] = [
-        (labelX: 2, valueX: 2),     // CPU position
-        (labelX: 32, valueX: 32),   // Memory position  
-        (labelX: 62, valueX: 62),   // Disk position
-        (labelX: 92, valueX: 92)    // Temperature position
-    ]
+    private let horizontalSlotWidth: CGFloat = 48
+    private let verticalSlotWidth: CGFloat = 30
     
     private let iconSize: CGFloat = 14
     private let fontSize: CGFloat = 12
@@ -149,13 +143,13 @@ final class StatusItemView: NSView {
         let centerY = bounds.midY
 
         for (index, metric) in metrics.enumerated() {
-            guard index < horizontalPositions.count else { break }
-            
-            let pos = horizontalPositions[index]
+            let slotX = CGFloat(index) * horizontalSlotWidth
+            let iconX = slotX + 2
+            let textX = slotX + 18
             
             // Draw icon at FIXED position with proper template rendering
             let icon = iconFor(kind: metric.kind)
-            let iconRect = CGRect(x: pos.iconX, y: centerY - iconSize/2, width: iconSize, height: iconSize)
+            let iconRect = CGRect(x: iconX, y: centerY - iconSize/2, width: iconSize, height: iconSize)
             
             // Proper template image rendering with tint color
             if icon.isTemplate {
@@ -181,7 +175,7 @@ final class StatusItemView: NSView {
             // Draw text at FIXED position
             let text = metric.formattedValue(horizontal: true)
             
-            let textRect = CGRect(x: pos.textX, y: centerY - fontSize/2 - 1, width: 50, height: fontSize + 2)
+            let textRect = CGRect(x: textX, y: centerY - fontSize/2 - 1, width: 50, height: fontSize + 2)
             (text as NSString).draw(in: textRect, withAttributes: attrs)
         }
     }
@@ -198,19 +192,17 @@ final class StatusItemView: NSView {
         let centerY = bounds.midY + bottomPadding
         
         for (index, metric) in metrics.enumerated() {
-            guard index < verticalPositions.count else { break }
-            
-            let pos = verticalPositions[index]
+            let slotX = CGFloat(index) * verticalSlotWidth + 2
             
             // Draw label above value - with bottom padding
             let labelText = labelFor(kind: metric.kind)
-            let labelRect = CGRect(x: pos.labelX, y: centerY - 2, width: 28, height: labelFontSize + 2)
+            let labelRect = CGRect(x: slotX, y: centerY - 2, width: 28, height: labelFontSize + 2)
             (labelText as NSString).draw(in: labelRect, withAttributes: labelAttrs)
             
             // Draw value below label - with bottom padding
             let valueText = metric.formattedValue(horizontal: false)
             
-            let valueRect = CGRect(x: pos.valueX, y: centerY - fontSize - 4, width: 28, height: fontSize + 2)
+            let valueRect = CGRect(x: slotX, y: centerY - fontSize - 4, width: 28, height: fontSize + 2)
             (valueText as NSString).draw(in: valueRect, withAttributes: valueAttrs)
         }
     }
@@ -221,6 +213,10 @@ final class StatusItemView: NSView {
         case .mem: return "MEM"
         case .disk: return "SSD"
         case .temp: return "TMP"
+        case .battery: return "BAT"
+        case .thermalPressure: return "THM"
+        case .memoryPressure: return "PRS"
+        case .uptime: return "UP"
         }
     }
 
@@ -237,6 +233,10 @@ final class StatusItemView: NSView {
             }
         case .disk: name = "internaldrive"
         case .temp: name = "thermometer.medium"
+        case .battery: name = "battery.100"
+        case .thermalPressure: name = "gauge.with.dots.needle.67percent"
+        case .memoryPressure: name = "memorychip"
+        case .uptime: name = "clock"
         }
         
         let img: NSImage

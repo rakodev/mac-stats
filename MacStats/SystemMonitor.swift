@@ -9,6 +9,10 @@ struct SystemStats {
     let memoryUsage: MemoryUsage
     let diskUsage: DiskUsage
     let temperature: TemperatureReading?
+    let battery: BatteryStatus?
+    let thermalPressure: ThermalPressureLevel
+    let memoryPressure: MemoryPressureLevel
+    let uptime: UptimeInfo
 }
 
 struct MemoryUsage {
@@ -28,13 +32,101 @@ struct TemperatureReading {
     let sensorName: String
 }
 
+struct BatteryStatus {
+    let percentage: Double
+    let isCharging: Bool
+    let isCharged: Bool
+    let isPluggedIn: Bool
+
+    var stateDescription: String {
+        if isCharged { return "Charged" }
+        if isCharging { return "Charging" }
+        return isPluggedIn ? "Plugged In" : "On Battery"
+    }
+}
+
+enum ThermalPressureLevel: String {
+    case nominal = "Nominal"
+    case fair = "Fair"
+    case serious = "Serious"
+    case critical = "Critical"
+    case unknown = "Unknown"
+
+    init(_ state: ProcessInfo.ThermalState) {
+        switch state {
+        case .nominal: self = .nominal
+        case .fair: self = .fair
+        case .serious: self = .serious
+        case .critical: self = .critical
+        @unknown default: self = .unknown
+        }
+    }
+
+    var shortValue: String {
+        switch self {
+        case .nominal: return "OK"
+        case .fair: return "Fair"
+        case .serious: return "Hot"
+        case .critical: return "Crit"
+        case .unknown: return "--"
+        }
+    }
+}
+
+enum MemoryPressureLevel: String {
+    case normal = "Normal"
+    case warning = "Warning"
+    case critical = "Critical"
+
+    var shortValue: String {
+        switch self {
+        case .normal: return "OK"
+        case .warning: return "Warn"
+        case .critical: return "Crit"
+        }
+    }
+}
+
+struct UptimeInfo {
+    let seconds: TimeInterval
+
+    var shortValue: String {
+        let totalMinutes = Int(seconds / 60)
+        let hours = totalMinutes / 60
+        let days = hours / 24
+
+        if days > 0 { return "\(days)d" }
+        if hours > 0 { return "\(hours)h" }
+        return "\(max(1, totalMinutes))m"
+    }
+
+    var formatted: String {
+        let totalMinutes = Int(seconds / 60)
+        let minutes = totalMinutes % 60
+        let hours = (totalMinutes / 60) % 24
+        let days = totalMinutes / 1_440
+
+        if days > 0 {
+            return "\(days)d \(hours)h"
+        }
+        if hours > 0 {
+            return "\(hours)h \(minutes)m"
+        }
+        return "\(max(1, minutes))m"
+    }
+}
+
 // MARK: - System Monitor Class
 class SystemMonitor: ObservableObject {
     @Published var currentStats = SystemStats(
         cpuUsage: 0.0,
         memoryUsage: MemoryUsage(used: 0, total: 0, percentage: 0.0),
         diskUsage: DiskUsage(used: 0, total: 0, percentage: 0.0),
-        temperature: nil
+        temperature: nil,
+        battery: nil,
+        thermalPressure: .unknown,
+        memoryPressure: .normal,
+        uptime: UptimeInfo(seconds: ProcessInfo.processInfo.systemUptime)
     )
     
     private var timer: Timer?
@@ -43,12 +135,18 @@ class SystemMonitor: ObservableObject {
     // For CPU calculation
     private var previousCPUInfo: [natural_t]?
     private let temperatureReader = TemperatureReader()
+    private let memoryPressureQueue = DispatchQueue(label: "com.macstats.memory-pressure", qos: .utility)
+    private var memoryPressureSource: DispatchSourceMemoryPressure?
+    private let memoryPressureLock = NSLock()
+    private var currentMemoryPressure: MemoryPressureLevel = .normal
     
     init() {
+        startMemoryPressureMonitoring()
         startMonitoring()
     }
     
     deinit {
+        memoryPressureSource?.cancel()
         stopMonitoring()
     }
     
@@ -76,16 +174,52 @@ class SystemMonitor: ObservableObject {
             let memoryUsage = self.getMemoryUsage()
             let diskUsage = self.getDiskUsage()
             let temperature = self.temperatureReader.cpuTemperature()
+            let battery = self.getBatteryStatus()
+            let thermalPressure = ThermalPressureLevel(ProcessInfo.processInfo.thermalState)
+            let memoryPressure = self.getCurrentMemoryPressure()
+            let uptime = UptimeInfo(seconds: ProcessInfo.processInfo.systemUptime)
             
             DispatchQueue.main.async {
                 self.currentStats = SystemStats(
                     cpuUsage: cpuUsage,
                     memoryUsage: memoryUsage,
                     diskUsage: diskUsage,
-                    temperature: temperature
+                    temperature: temperature,
+                    battery: battery,
+                    thermalPressure: thermalPressure,
+                    memoryPressure: memoryPressure,
+                    uptime: uptime
                 )
             }
         }
+    }
+
+    private func startMemoryPressureMonitoring() {
+        let source = DispatchSource.makeMemoryPressureSource(eventMask: [.normal, .warning, .critical], queue: memoryPressureQueue)
+        source.setEventHandler { [weak self, weak source] in
+            guard let event = source?.data else { return }
+            if event.contains(.critical) {
+                self?.setCurrentMemoryPressure(.critical)
+            } else if event.contains(.warning) {
+                self?.setCurrentMemoryPressure(.warning)
+            } else if event.contains(.normal) {
+                self?.setCurrentMemoryPressure(.normal)
+            }
+        }
+        source.resume()
+        memoryPressureSource = source
+    }
+
+    private func getCurrentMemoryPressure() -> MemoryPressureLevel {
+        memoryPressureLock.lock()
+        defer { memoryPressureLock.unlock() }
+        return currentMemoryPressure
+    }
+
+    private func setCurrentMemoryPressure(_ pressure: MemoryPressureLevel) {
+        memoryPressureLock.lock()
+        currentMemoryPressure = pressure
+        memoryPressureLock.unlock()
     }
     
     // MARK: - CPU Usage Calculation
@@ -210,6 +344,41 @@ class SystemMonitor: ObservableObject {
             // ignore, fall through
         }
         return DiskUsage(used: 0, total: 0, percentage: 0.0)
+    }
+
+    // MARK: - Battery Status
+    private func getBatteryStatus() -> BatteryStatus? {
+        guard let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+              let sources = IOPSCopyPowerSourcesList(snapshot)?.takeRetainedValue() as? [CFTypeRef] else {
+            return nil
+        }
+
+        for source in sources {
+            guard let description = IOPSGetPowerSourceDescription(snapshot, source)?.takeUnretainedValue() as? [String: Any],
+                  let type = description[kIOPSTypeKey as String] as? String,
+                  type == kIOPSInternalBatteryType else {
+                continue
+            }
+
+            let currentCapacity = (description[kIOPSCurrentCapacityKey as String] as? NSNumber)?.doubleValue ?? 0
+            let maxCapacity = (description[kIOPSMaxCapacityKey as String] as? NSNumber)?.doubleValue ?? 0
+            guard maxCapacity > 0 else { return nil }
+
+            let powerState = description[kIOPSPowerSourceStateKey as String] as? String
+            let percentage = (currentCapacity / maxCapacity) * 100.0
+            let isCharging = (description[kIOPSIsChargingKey as String] as? Bool) ?? false
+            let isCharged = (description[kIOPSIsChargedKey as String] as? Bool) ?? false
+            let isPluggedIn = powerState == kIOPSACPowerValue
+
+            return BatteryStatus(
+                percentage: max(0, min(100, percentage)),
+                isCharging: isCharging,
+                isCharged: isCharged,
+                isPluggedIn: isPluggedIn
+            )
+        }
+
+        return nil
     }
 }
 

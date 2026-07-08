@@ -149,7 +149,20 @@ class MenuBarController: NSObject, ObservableObject {
 
     private func enabledMetricCount() -> Int {
         let prefs = preferencesManager
-        return [prefs.showCPU, prefs.showMemory, prefs.showDisk, prefs.showTemperature].filter { $0 }.count
+        return visibleMetricFlags(prefs).filter { $0 }.count
+    }
+
+    private func visibleMetricFlags(_ prefs: UserPreferencesManager) -> [Bool] {
+        [
+            prefs.showCPU,
+            prefs.showMemory,
+            prefs.showDisk,
+            prefs.showTemperature,
+            prefs.showBattery,
+            prefs.showThermalPressure,
+            prefs.showMemoryPressure,
+            prefs.showUptime
+        ]
     }
     
     private func handleStatusItemClick(_ event: NSEvent) {
@@ -199,7 +212,7 @@ class MenuBarController: NSObject, ObservableObject {
     
     private func setupPopover() {
         popover = NSPopover()
-        popover.contentSize = NSSize(width: 300, height: 260)
+        popover.contentSize = NSSize(width: 320, height: 420)
         popover.behavior = .transient
         popover.contentViewController = NSHostingController(
             rootView: MenuBarPopoverView(
@@ -244,11 +257,15 @@ class MenuBarController: NSObject, ObservableObject {
             }
             .store(in: &cancellables)
         
-        Publishers.Merge4(
+        Publishers.MergeMany(
             preferencesManager.$showCPU,
             preferencesManager.$showMemory,
             preferencesManager.$showDisk,
-            preferencesManager.$showTemperature
+            preferencesManager.$showTemperature,
+            preferencesManager.$showBattery,
+            preferencesManager.$showThermalPressure,
+            preferencesManager.$showMemoryPressure,
+            preferencesManager.$showUptime
         )
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
@@ -304,6 +321,19 @@ class MenuBarController: NSObject, ObservableObject {
         if prefs.showTemperature {
             metrics.append(StatusItemView.Metric(kind: .temp, celsius: stats.temperature?.celsius, unit: prefs.temperatureUnit))
         }
+        if prefs.showBattery {
+            let value = stats.battery.map { String(format: "%.0f%%", $0.percentage) } ?? "--%"
+            metrics.append(StatusItemView.Metric(kind: .battery, text: value))
+        }
+        if prefs.showThermalPressure {
+            metrics.append(StatusItemView.Metric(kind: .thermalPressure, text: stats.thermalPressure.shortValue))
+        }
+        if prefs.showMemoryPressure {
+            metrics.append(StatusItemView.Metric(kind: .memoryPressure, text: stats.memoryPressure.shortValue))
+        }
+        if prefs.showUptime {
+            metrics.append(StatusItemView.Metric(kind: .uptime, text: stats.uptime.shortValue))
+        }
         
         // Update the custom view metrics and layout
         customView.metrics = metrics
@@ -341,6 +371,10 @@ class MenuBarController: NSObject, ObservableObject {
         DispatchQueue.main.async {
             alert.runModal()
         }
+    }
+
+    fileprivate func canDisableVisibleMetric() -> Bool {
+        enabledMetricCount() > 1
     }
     
     // MARK: - Activity Monitor Integration
@@ -535,6 +569,105 @@ struct MenuBarPopoverView: View {
             .help("CPU temperature from the first available AppleSMC CPU sensor")
             .opacity(controller.preferencesManager.showTemperature ? 1 : 0.25)
 
+            // Battery
+            HStack {
+                let battery = systemMonitor.currentStats.battery
+                let batteryColor: Color = {
+                    guard let battery else { return .secondary }
+                    if battery.percentage <= 10 && !battery.isPluggedIn { return .red }
+                    if battery.percentage <= 25 && !battery.isPluggedIn { return .orange }
+                    return .green
+                }()
+                Image(systemName: battery?.isCharging == true ? "battery.100.bolt" : "battery.100")
+                    .font(.caption)
+                    .foregroundColor(batteryColor)
+                Text("Battery")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                Spacer()
+                if let battery {
+                    Text(battery.stateDescription)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                    Text(String(format: "%.0f%%", battery.percentage))
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(batteryColor)
+                } else {
+                    Text("Unavailable")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.secondary)
+                }
+            }
+            .opacity(controller.preferencesManager.showBattery ? 1 : 0.25)
+
+            // Thermal Pressure
+            HStack {
+                let thermalPressure = systemMonitor.currentStats.thermalPressure
+                let color: Color = {
+                    switch thermalPressure {
+                    case .nominal: return .green
+                    case .fair: return .yellow
+                    case .serious: return .orange
+                    case .critical: return .red
+                    case .unknown: return .secondary
+                    }
+                }()
+                Image(systemName: "gauge.with.dots.needle.67percent")
+                    .font(.caption)
+                    .foregroundColor(color)
+                Text("Thermal Pressure")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                Spacer()
+                Text(thermalPressure.rawValue)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(color)
+            }
+            .opacity(controller.preferencesManager.showThermalPressure ? 1 : 0.25)
+
+            // Memory Pressure
+            HStack {
+                let memoryPressure = systemMonitor.currentStats.memoryPressure
+                let color: Color = {
+                    switch memoryPressure {
+                    case .normal: return .green
+                    case .warning: return .orange
+                    case .critical: return .red
+                    }
+                }()
+                Image(systemName: "memorychip")
+                    .font(.caption)
+                    .foregroundColor(color)
+                Text("Memory Pressure")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                Spacer()
+                Text(memoryPressure.rawValue)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(color)
+            }
+            .opacity(controller.preferencesManager.showMemoryPressure ? 1 : 0.25)
+
+            // Uptime
+            HStack {
+                Image(systemName: "clock")
+                    .font(.caption)
+                    .foregroundColor(.indigo)
+                Text("Uptime")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                Spacer()
+                Text(systemMonitor.currentStats.uptime.formatted)
+                    .font(.caption)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.indigo)
+            }
+            .opacity(controller.preferencesManager.showUptime ? 1 : 0.25)
+
             // Settings (collapsible)
             if controller.showSettings {
                 Divider()
@@ -584,7 +717,7 @@ struct MenuBarPopoverView: View {
                             get: { controller.preferencesManager.showCPU },
                             set: { newValue in
                                 let prefs = controller.preferencesManager
-                                if !newValue && !prefs.showMemory && !prefs.showDisk && !prefs.showTemperature {
+                                if !newValue && !controller.canDisableVisibleMetric() {
                                     controller.showLastMetricWarning(); return
                                 }
                                 prefs.showCPU = newValue
@@ -595,7 +728,7 @@ struct MenuBarPopoverView: View {
                             get: { controller.preferencesManager.showMemory },
                             set: { newValue in
                                 let prefs = controller.preferencesManager
-                                if !newValue && !prefs.showCPU && !prefs.showDisk && !prefs.showTemperature {
+                                if !newValue && !controller.canDisableVisibleMetric() {
                                     controller.showLastMetricWarning(); return
                                 }
                                 prefs.showMemory = newValue
@@ -606,7 +739,7 @@ struct MenuBarPopoverView: View {
                             get: { controller.preferencesManager.showDisk },
                             set: { newValue in
                                 let prefs = controller.preferencesManager
-                                if !newValue && !prefs.showCPU && !prefs.showMemory && !prefs.showTemperature {
+                                if !newValue && !controller.canDisableVisibleMetric() {
                                     controller.showLastMetricWarning(); return
                                 }
                                 prefs.showDisk = newValue
@@ -617,10 +750,62 @@ struct MenuBarPopoverView: View {
                             get: { controller.preferencesManager.showTemperature },
                             set: { newValue in
                                 let prefs = controller.preferencesManager
-                                if !newValue && !prefs.showCPU && !prefs.showMemory && !prefs.showDisk {
+                                if !newValue && !controller.canDisableVisibleMetric() {
                                     controller.showLastMetricWarning(); return
                                 }
                                 prefs.showTemperature = newValue
+                                controller.updateStatusItemTitle()
+                            }
+                        ))
+                    }
+                    .font(.caption)
+                    .toggleStyle(.checkbox)
+                    HStack(spacing: 12) {
+                        Toggle("Battery", isOn: Binding(
+                            get: { controller.preferencesManager.showBattery },
+                            set: { newValue in
+                                let prefs = controller.preferencesManager
+                                if !newValue && !controller.canDisableVisibleMetric() {
+                                    controller.showLastMetricWarning(); return
+                                }
+                                prefs.showBattery = newValue
+                                controller.updateStatusItemTitle()
+                            }
+                        ))
+                        Toggle("Thermal", isOn: Binding(
+                            get: { controller.preferencesManager.showThermalPressure },
+                            set: { newValue in
+                                let prefs = controller.preferencesManager
+                                if !newValue && !controller.canDisableVisibleMetric() {
+                                    controller.showLastMetricWarning(); return
+                                }
+                                prefs.showThermalPressure = newValue
+                                controller.updateStatusItemTitle()
+                            }
+                        ))
+                        Toggle("Mem Press", isOn: Binding(
+                            get: { controller.preferencesManager.showMemoryPressure },
+                            set: { newValue in
+                                let prefs = controller.preferencesManager
+                                if !newValue && !controller.canDisableVisibleMetric() {
+                                    controller.showLastMetricWarning(); return
+                                }
+                                prefs.showMemoryPressure = newValue
+                                controller.updateStatusItemTitle()
+                            }
+                        ))
+                    }
+                    .font(.caption)
+                    .toggleStyle(.checkbox)
+                    HStack(spacing: 12) {
+                        Toggle("Uptime", isOn: Binding(
+                            get: { controller.preferencesManager.showUptime },
+                            set: { newValue in
+                                let prefs = controller.preferencesManager
+                                if !newValue && !controller.canDisableVisibleMetric() {
+                                    controller.showLastMetricWarning(); return
+                                }
+                                prefs.showUptime = newValue
                                 controller.updateStatusItemTitle()
                             }
                         ))

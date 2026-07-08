@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-MacStats is a lightweight macOS menu bar app that shows real-time CPU, Memory, aggregate Disk usage (main volume `/`), and optional CPU temperature. It is a menu bar only app (no dock icon by default, `.accessory` activation policy) built with SwiftUI + AppKit. The design priority is minimal overhead: small binary, low CPU, few allocations, and values that stay aligned with Activity Monitor where Activity Monitor exposes comparable metrics.
+MacStats is a lightweight macOS menu bar app that shows real-time CPU, Memory, aggregate Disk usage (main volume `/`), and optional system health metrics. It is a menu bar only app (no dock icon by default, `.accessory` activation policy) built with SwiftUI + AppKit. The design priority is minimal overhead: small binary, low CPU, few allocations, and values that stay aligned with Activity Monitor where Activity Monitor exposes comparable metrics.
 
 Bundle id: `com.macstats.app`. Requires macOS 13.0+ and Xcode 15+ to build. Universal binary (Apple Silicon + Intel). No third-party dependencies.
 
@@ -32,6 +32,10 @@ All source is in `MacStats/`. The flow is: `SystemMonitor` samples raw metrics o
   - Memory: `host_statistics64(HOST_VM_INFO64)`. "App Memory" style = (active + wired + compressed) pages x page size, over `physicalMemory`. Inactive, free, and speculative are deliberately excluded to match Activity Monitor's App Memory.
   - Disk: `FileManager.attributesOfFileSystem(forPath: "/")`, used = total - free. Root volume only.
   - Temperature: `TemperatureReader` uses Apple Silicon IOHID PMU die sensors first, returning the hottest `PMU tdie*` reading as CPU Die. Falls back to `SMCTemperatureReader` on Intel, preferring CPU proximity (`TC0P`). Returns `nil` when no compatible sensor is available.
+  - Battery: `IOPSCopyPowerSourcesInfo/List` + `IOPSGetPowerSourceDescription`, internal battery only. Returns `nil` on desktops/no internal battery.
+  - Thermal Pressure: `ProcessInfo.processInfo.thermalState`.
+  - Memory Pressure: `DispatchSource.makeMemoryPressureSource`, tracked as Normal/Warning/Critical.
+  - Uptime: `ProcessInfo.processInfo.systemUptime`.
 - **`MenuBarController.swift`** - Owns the `NSStatusItem`, the `StatusItemView`, and the SwiftUI popover (`MenuBarPopoverView`). Observes `SystemMonitor.$currentStats` and `UserPreferencesManager` publishers via Combine. Left click toggles the popover; right click shows a context menu (Settings placeholder + Quit). Also holds the static AppleScript helpers for Activity Monitor.
 - **`StatusItemView.swift`** - Custom `NSView` that draws the menu bar content directly (icons + values) rather than using a status item title string. Two `LayoutStyle`s: `.horizontal` (SF Symbol icon beside value) and `.vertical` (short label CPU/MEM/SSD/TMP above value). Positions are fixed pixel offsets to prevent jitter. Icons are template images cached per metric kind and regenerated on appearance (light/dark) change.
 - **`UserPreferences.swift`** - `UserPreferencesManager.shared`, an `ObservableObject` whose `@Published` properties persist to `UserDefaults` in `didSet`. Also contains `TemperatureUnit`, `ThemeManager` (light/dark/system via `NSApp.appearance`), and the `Theme` enum.
@@ -42,7 +46,7 @@ All source is in `MacStats/`. The flow is: `SystemMonitor` samples raw metrics o
 - `DisplayFormat` (in `MenuBarController.swift`): `.compact` and `.vertical` only. Default is `.vertical`. (Note: `.github/copilot-instructions.md` and `CHANGELOG.md` mention older `.detailed`/`.cpuOnly`/`.memoryOnly` cases that no longer exist.)
 - `RefreshInterval` (Double seconds): `.oneSecond`, `.twoSeconds` (default), `.fiveSeconds`, `.tenSeconds`.
 - `TemperatureUnit`: `.celsius` (default) and `.fahrenheit`. Sampling remains Celsius; conversion happens at display formatting.
-- Metric visibility is independent of format via `showCPU` / `showMemory` / `showDisk` / `showTemperature` prefs. At least one must stay enabled (`showLastMetricWarning` blocks disabling the last one). Temperature defaults off to preserve menu bar width and because thermal sensor availability varies by Mac model.
+- Metric visibility is independent of format via per-metric `show...` prefs. CPU/Memory/Disk default on; Temperature, Battery, Thermal Pressure, Memory Pressure, and Uptime default off. At least one metric must stay enabled (`showLastMetricWarning` blocks disabling the last one).
 
 ### Preferences wiring
 
@@ -54,7 +58,7 @@ Clicking CPU / Memory / Disk in the popover runs an `NSAppleScript` that activat
 
 ## Product scope (goals and non-goals)
 
-Keep the feature set minimal. In scope: CPU %, Memory %, single-volume Disk %, optional CPU temperature in the menu bar, plus an optional detail popover and lightweight settings.
+Keep the feature set minimal. In scope: CPU %, Memory %, single-volume Disk %, optional CPU temperature, optional Battery %, optional Thermal Pressure, optional Memory Pressure, optional Uptime in the menu bar, plus an optional detail popover and lightweight settings.
 
 Out of scope (do not add without a strong, validated reason): per-process breakdowns, GPU or network metrics, disk IO or per-volume panels, historical charts or logging, extra windows. When asked for broader metrics, confirm alignment with this minimal scope first.
 

@@ -1,8 +1,18 @@
 # MacStats 📊
 
-Lightweight macOS menu bar app showing real-time CPU, Memory, Disk, and optional CPU temperature. Built to be simple, accurate, and low overhead.
+Lightweight macOS menu bar app showing real-time CPU, Memory, Disk, and optional system health metrics. Built to be simple, accurate, and low overhead.
 
 ![MacStats Demo](assets/demo.gif)
+
+## Screenshots
+
+All optional stats enabled in the menu bar:
+
+![MacStats menu bar with all stats enabled](docs/assets/images/all-stats.png)
+
+Menu bar, detail popover, and settings:
+
+![MacStats details and settings with all stats enabled](docs/assets/images/all-stats-details.png)
 
 ## Why
 You shouldn’t need a heavy multi‑window monitor just to glance at CPU and memory. MacStats gives you the essentials in the menu bar with optional detail on click.
@@ -10,6 +20,7 @@ You shouldn’t need a heavy multi‑window monitor just to glance at CPU and me
 ## Key Features
 
 * Live CPU %, Memory %, Disk % (main volume), and optional CPU temperature with matching SF Symbol icons in the menu bar
+* Choose exactly which stats appear in the menu bar; CPU, Memory, and Disk are on by default, while Temperature, Battery, Thermal Pressure, Memory Pressure, and Uptime are opt-in
 * Disk color thresholds (>=80% amber, >=90% red) and temperature thresholds (>=80 C amber, >=90 C red) in the popover
 * Two display formats (Compact, Vertical) - both can include any enabled metrics
 * Click CPU, Memory, or Disk text to open Activity Monitor on the corresponding tab
@@ -42,7 +53,7 @@ Download the latest release from [GitHub Releases](https://github.com/rakodev/ma
 
 ## Quick Start
 
-The status item appears in the menu bar. Left-click for the popover (detailed view + settings). Right-click for quick format / refresh changes. Temperature is optional and can be enabled with the Temp checkbox in settings, with Celsius or Fahrenheit display.
+The status item appears in the menu bar. Left-click for the popover (detailed view + settings). In settings, use the metric checkboxes to choose exactly which stats are shown in the menu bar. CPU, Memory, and Disk start enabled; Temperature, Battery, Thermal Pressure, Memory Pressure, and Uptime start disabled.
 
 ## Display Formats
 
@@ -108,7 +119,7 @@ defaults delete com.macstats.app 2>/dev/null || true
 ```text
 MacStats/
   MacStats/                  Core sources
-    SystemMonitor.swift      CPU + Memory + Disk + CPU temperature collection
+    SystemMonitor.swift      CPU + Memory + Disk + optional health metric collection
     MenuBarController.swift  Status item + popover + formatting + Activity Monitor hooks
     UserPreferences.swift    Persistence (UserDefaults)
     ContentView.swift        SwiftUI views
@@ -121,6 +132,10 @@ CPU: Derived via `host_processor_info` diffing ticks between samples.
 Memory: App memory (active + wired + compressed) vs total physical for Activity Monitor alignment.  
 Disk: Main volume used = total − free (FileManager attributes) with % + thresholds (80/90%).  
 Temperature: On Apple Silicon, hottest PMU CPU die sensor from IOHID. On Intel, first available AppleSMC CPU sensor, preferring CPU proximity.  
+Battery: Internal battery percentage and charging/plugged-in state via IOKit power sources.  
+Thermal Pressure: `ProcessInfo.processInfo.thermalState`.  
+Memory Pressure: Dispatch memory pressure events, shown as Normal/Warning/Critical.  
+Uptime: `ProcessInfo.processInfo.systemUptime`.  
 Refresh: Timer driven (DispatchSource / Combine) using selected interval.  
 UI: SwiftUI embedded in `NSStatusItem` with a popover.
 

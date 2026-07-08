@@ -30,5 +30,5 @@ echo "🚀 Starting MacStats from: $BUILD_PATH"
 # Open the app
 open "$BUILD_PATH"
 
-echo "✅ MacStats started! Check your menu bar for the CPU/Memory/Disk/Temperature stats."
+echo "✅ MacStats started! Check your menu bar for the enabled stats."
 echo "If you don't see it immediately, it may take a few seconds to appear."

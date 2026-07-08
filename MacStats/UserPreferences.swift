@@ -52,6 +52,18 @@ class UserPreferencesManager: ObservableObject {
     @Published var showTemperature: Bool {
         didSet { UserDefaults.standard.set(showTemperature, forKey: "showTemperature") }
     }
+    @Published var showBattery: Bool {
+        didSet { UserDefaults.standard.set(showBattery, forKey: "showBattery") }
+    }
+    @Published var showThermalPressure: Bool {
+        didSet { UserDefaults.standard.set(showThermalPressure, forKey: "showThermalPressure") }
+    }
+    @Published var showMemoryPressure: Bool {
+        didSet { UserDefaults.standard.set(showMemoryPressure, forKey: "showMemoryPressure") }
+    }
+    @Published var showUptime: Bool {
+        didSet { UserDefaults.standard.set(showUptime, forKey: "showUptime") }
+    }
     
     private init() {
         // Load saved preferences or use defaults
@@ -80,6 +92,10 @@ class UserPreferencesManager: ObservableObject {
         self.showMemory = UserDefaults.standard.object(forKey: "showMemory") as? Bool ?? true
         self.showDisk = UserDefaults.standard.object(forKey: "showDisk") as? Bool ?? true
         self.showTemperature = UserDefaults.standard.object(forKey: "showTemperature") as? Bool ?? false
+        self.showBattery = UserDefaults.standard.object(forKey: "showBattery") as? Bool ?? false
+        self.showThermalPressure = UserDefaults.standard.object(forKey: "showThermalPressure") as? Bool ?? false
+        self.showMemoryPressure = UserDefaults.standard.object(forKey: "showMemoryPressure") as? Bool ?? false
+        self.showUptime = UserDefaults.standard.object(forKey: "showUptime") as? Bool ?? false
     }
     
     private func updateLaunchAtLogin() {
@@ -117,6 +133,10 @@ class UserPreferencesManager: ObservableObject {
         showMemory = true
         showDisk = true
         showTemperature = false
+        showBattery = false
+        showThermalPressure = false
+        showMemoryPressure = false
+        showUptime = false
     }
 }
 
