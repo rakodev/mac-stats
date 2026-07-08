@@ -1,11 +1,44 @@
 import Cocoa
 
-// Fixed pixel layout - absolutely no dynamic calculations to prevent ANY movement
+// Fixed pixel slot layout to prevent jitter while metrics update
 final class StatusItemView: NSView {
     struct Metric {
-        enum Kind { case cpu, mem, disk }
+        enum Kind { case cpu, mem, disk, temp }
+        enum ValueStyle { case percentage, temperature(TemperatureUnit) }
+
         let kind: Kind
-        let percentage: Double
+        let value: Double?
+        let valueStyle: ValueStyle
+
+        init(kind: Kind, percentage: Double) {
+            self.kind = kind
+            self.value = percentage
+            self.valueStyle = .percentage
+        }
+
+        init(kind: Kind, celsius: Double?, unit: TemperatureUnit) {
+            self.kind = kind
+            switch unit {
+            case .celsius:
+                self.value = celsius
+            case .fahrenheit:
+                self.value = celsius.map { ($0 * 9.0 / 5.0) + 32.0 }
+            }
+            self.valueStyle = .temperature(unit)
+        }
+
+        func formattedValue(horizontal: Bool) -> String {
+            switch valueStyle {
+            case .percentage:
+                guard let value else { return horizontal ? " --%" : "--%" }
+                let rounded = Int(round(max(0, min(100, value))))
+                return horizontal ? String(format: "%3d%%", rounded) : String(format: "%2d%%", rounded)
+            case .temperature(let unit):
+                guard let value else { return "--\(unit.symbol)" }
+                let rounded = Int(round(value))
+                return horizontal ? String(format: "%3d%@", rounded, unit.symbol) : String(format: "%2d%@", rounded, unit.symbol)
+            }
+        }
     }
 
     enum LayoutStyle {
@@ -19,19 +52,31 @@ final class StatusItemView: NSView {
 
     private var iconCache: [Metric.Kind: NSImage] = [:]
 
+    static func width(for layoutStyle: LayoutStyle, metricCount: Int) -> CGFloat {
+        let count = max(1, metricCount)
+        switch layoutStyle {
+        case .horizontal:
+            return CGFloat(count) * 48 + 6
+        case .vertical:
+            return CGFloat(count) * 30
+        }
+    }
+
     // ABSOLUTELY FIXED LAYOUT - these positions NEVER change
     // Horizontal layout: icons with text beside them
     private let horizontalPositions: [(iconX: CGFloat, textX: CGFloat)] = [
         (iconX: 2, textX: 18),     // CPU position
         (iconX: 50, textX: 66),    // Memory position  
-        (iconX: 98, textX: 114)    // Disk position
+        (iconX: 98, textX: 114),   // Disk position
+        (iconX: 146, textX: 162)   // Temperature position
     ]
     
     // Vertical layout: labels above percentages, very compact horizontal spacing
     private let verticalPositions: [(labelX: CGFloat, valueX: CGFloat)] = [
         (labelX: 2, valueX: 2),     // CPU position
         (labelX: 32, valueX: 32),   // Memory position  
-        (labelX: 62, valueX: 62)    // Disk position
+        (labelX: 62, valueX: 62),   // Disk position
+        (labelX: 92, valueX: 92)    // Temperature position
     ]
     
     private let iconSize: CGFloat = 14
@@ -133,10 +178,8 @@ final class StatusItemView: NSView {
                 icon.draw(in: iconRect)
             }
             
-            // Draw text at FIXED position - format depends on detailed mode
-            let value = Int(round(max(0, min(100, metric.percentage))))
-            // Always use compact formatting: show integer only
-            let text = String(format: "%3d%%", value)
+            // Draw text at FIXED position
+            let text = metric.formattedValue(horizontal: true)
             
             let textRect = CGRect(x: pos.textX, y: centerY - fontSize/2 - 1, width: 50, height: fontSize + 2)
             (text as NSString).draw(in: textRect, withAttributes: attrs)
@@ -164,9 +207,8 @@ final class StatusItemView: NSView {
             let labelRect = CGRect(x: pos.labelX, y: centerY - 2, width: 28, height: labelFontSize + 2)
             (labelText as NSString).draw(in: labelRect, withAttributes: labelAttrs)
             
-            // Draw percentage value below label - with bottom padding
-            let value = Int(round(max(0, min(100, metric.percentage))))
-            let valueText = String(format: "%2d%%", value)
+            // Draw value below label - with bottom padding
+            let valueText = metric.formattedValue(horizontal: false)
             
             let valueRect = CGRect(x: pos.valueX, y: centerY - fontSize - 4, width: 28, height: fontSize + 2)
             (valueText as NSString).draw(in: valueRect, withAttributes: valueAttrs)
@@ -178,6 +220,7 @@ final class StatusItemView: NSView {
         case .cpu: return "CPU"
         case .mem: return "MEM"
         case .disk: return "SSD"
+        case .temp: return "TMP"
         }
     }
 
@@ -193,6 +236,7 @@ final class StatusItemView: NSView {
                 name = "memorychip" 
             }
         case .disk: name = "internaldrive"
+        case .temp: name = "thermometer.medium"
         }
         
         let img: NSImage

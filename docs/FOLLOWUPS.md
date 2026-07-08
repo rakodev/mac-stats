@@ -6,8 +6,6 @@ Promote an item to `BACKLOG.md` only when it has a clear problem statement, prio
 
 ## Future Improvements
 
-- [ ] Optional temperature sensor behind a feature flag.
-  - Why later: The existing project guide lists temperature as a possible extension point, but the sensor source, energy cost, and fit with the app's minimal metrics scope need validation first.
 - [ ] Minimal notification when memory or disk crosses a threshold.
   - Why later: The existing project guide identifies threshold notifications as a possible extension point, but useful defaults, notification preferences, and low-overhead behavior need product validation before this becomes committed work.
 - [ ] Optional toggle to hide disk in width-sensitive menu bars.

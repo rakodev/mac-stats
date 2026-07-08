@@ -1,9 +1,9 @@
 # Copilot Context Guide: MacStats
 
-Purpose: A tiny macOS menu bar utility that shows current CPU, Memory, and aggregate Disk usage with minimal overhead and optional detail popover.
+Purpose: A tiny macOS menu bar utility that shows current CPU, Memory, aggregate Disk usage, and optional CPU temperature with minimal overhead and optional detail popover.
 
 ## Core Goals
-- Always-visible, glanceable CPU, Memory, and Disk % (main volume) in menu bar
+- Always-visible, glanceable CPU, Memory, and Disk % (main volume) in menu bar, with optional CPU temperature
 - Accurate + stable values (aligned with Activity Monitor for memory %)
 - Lightweight (low CPU usage, minimal allocations, tiny binary)
 - Intuitive: left click = detail + settings, right click = quick menu
@@ -19,25 +19,28 @@ Purpose: A tiny macOS menu bar utility that shows current CPU, Memory, and aggre
 ## Architecture Overview
 - `MacStatsApp.swift`: App entry, sets up controller singletons
 - `MenuBarController.swift`: Owns `NSStatusItem`, SwiftUI popover, formatting, Activity Monitor integration (AppleScript launch helpers)
-- `SystemMonitor.swift`: Sampling logic for CPU + Memory + Disk
+- `SystemMonitor.swift`: Sampling logic for CPU + Memory + Disk + CPU temperature
   - CPU via `host_processor_info` diff between ticks (user, system, idle)
   - Memory via `vm_statistics64` building an App Memory style usage
   - Disk via FileManager filesystem attributes (total, free) main volume
+  - Temperature via best-effort IOHID PMU CPU die sensors on Apple Silicon, with AppleSMC CPU sensor fallback on Intel; returns unavailable when unsupported
 - `UserPreferences.swift`: `UserPreferencesManager` singleton, `@Published` properties persisted in `UserDefaults` (display format, refresh interval, theme)
 - `ContentView.swift`: SwiftUI view composition used inside the popover
 
 ## Key Data Types
-- `DisplayFormat` enum: `.compact`, `.detailed`, `.cpuOnly`, `.memoryOnly`
+- `DisplayFormat` enum: `.compact`, `.vertical`
 - `RefreshInterval` enum (Double rawValue seconds): `.oneSecond = 1`, `.twoSeconds = 2`, `.fiveSeconds = 5`, `.tenSeconds = 10`
+- `TemperatureUnit` enum: `.celsius`, `.fahrenheit`; raw readings remain Celsius and display formatting converts as needed
 
 ## Update Loop
 1. A timer / dispatch source triggers at chosen refresh interval
-2. `SystemMonitor` samples raw CPU ticks + memory stats + disk filesystem attributes
+2. `SystemMonitor` samples raw CPU ticks + memory stats + disk filesystem attributes + best-effort CPU temperature
 3. CPU % computed by delta ticks vs total ticks
 4. Memory % = (usedAppMemoryBytes / totalPhysicalBytes)
 5. Disk % = (usedBytes / totalBytes) main volume
-6. `MenuBarController` formats according to `DisplayFormat`
-7. Status item title updated on main thread
+6. Temperature = hottest Apple Silicon PMU CPU die sensor or first available Intel AppleSMC CPU sensor in Celsius, or unavailable
+7. `MenuBarController` formats according to `DisplayFormat`
+8. Status item title updated on main thread
 
 ## Activity Monitor Integration
 - Clicking CPU text -> `openActivityMonitorCPU()` (AppleScript opens & selects CPU tab)
@@ -48,16 +51,16 @@ Purpose: A tiny macOS menu bar utility that shows current CPU, Memory, and aggre
 - Keep title concise (compact mode tries to stay < ~30 chars, now includes disk)
 - Avoid frequent string allocations; reuse formatters if introduced
 - Avoid blocking main thread in sampling or formatting
-- Disk color thresholds (>=80% amber, >=90% red) in detailed popover bar
+- Disk color thresholds (>=80% amber, >=90% red) and temperature thresholds (>=80 C amber, >=90 C red) in detailed popover bars
 
 ## Performance Considerations
 - Do not sample more often than 1s
 - Reuse previous CPU snapshot to compute delta; never reset unexpectedly
 - Avoid enumerating processes
 - Single filesystem attribute fetch per interval (cheap) only for root volume
+- Temperature must remain optional and tolerate missing IOHID/AppleSMC keys; do not require privileged command-line tools
 
 ## Extension Points (If Needed Later)
-- Add optional temperature sensor (behind feature flag)
 - Add minimal notification when memory or disk crosses threshold
 - Add user toggle to hide disk if width-sensitive (only if strongly requested)
 

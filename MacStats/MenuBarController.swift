@@ -55,6 +55,7 @@ class MenuBarController: NSObject, ObservableObject {
     // Published properties for SwiftUI binding
     @Published var displayFormat: DisplayFormat = .compact
     @Published var refreshInterval: RefreshInterval = .twoSeconds
+    @Published var temperatureUnit: TemperatureUnit = .celsius
     @Published var showSettings: Bool = false
     
     override init() {
@@ -63,6 +64,7 @@ class MenuBarController: NSObject, ObservableObject {
         // Sync with preferences manager
         displayFormat = preferencesManager.displayFormat
         refreshInterval = RefreshInterval(rawValue: preferencesManager.refreshInterval) ?? .twoSeconds
+        temperatureUnit = preferencesManager.temperatureUnit
         
         setupStatusItem()
         setupPopover()
@@ -82,14 +84,7 @@ class MenuBarController: NSObject, ObservableObject {
         removeStatusItems()
         
         // Determine width based on layout style
-        let width: CGFloat = {
-            switch preferencesManager.displayFormat {
-            case .vertical:
-                return 90  // Narrower for vertical layout
-            default:
-                return 150 // Original width for compact horizontal layout
-            }
-        }()
+        let width = statusItemWidth(for: preferencesManager.displayFormat)
         
         // Create the unified status item
         statusItem = NSStatusBar.system.statusItem(withLength: width)
@@ -120,14 +115,7 @@ class MenuBarController: NSObject, ObservableObject {
         }
         
         // Update width based on new format
-        let newWidth: CGFloat = {
-            switch format {
-            case .vertical:
-                return 90  // Narrower for vertical layout
-            default:
-                return 150 // Original width for compact horizontal layout
-            }
-        }()
+        let newWidth = statusItemWidth(for: format)
         
         print("MacStats: Updating format to \(format), width: \(newWidth)")
         
@@ -152,6 +140,16 @@ class MenuBarController: NSObject, ObservableObject {
     private func removeStatusItems() {
         statusItem = nil
         customView = nil
+    }
+
+    private func statusItemWidth(for format: DisplayFormat, metricCount: Int? = nil) -> CGFloat {
+        let layoutStyle: StatusItemView.LayoutStyle = (format == .vertical) ? .vertical : .horizontal
+        return StatusItemView.width(for: layoutStyle, metricCount: metricCount ?? enabledMetricCount())
+    }
+
+    private func enabledMetricCount() -> Int {
+        let prefs = preferencesManager
+        return [prefs.showCPU, prefs.showMemory, prefs.showDisk, prefs.showTemperature].filter { $0 }.count
     }
     
     private func handleStatusItemClick(_ event: NSEvent) {
@@ -201,7 +199,7 @@ class MenuBarController: NSObject, ObservableObject {
     
     private func setupPopover() {
         popover = NSPopover()
-        popover.contentSize = NSSize(width: 300, height: 200)
+        popover.contentSize = NSSize(width: 300, height: 260)
         popover.behavior = .transient
         popover.contentViewController = NSHostingController(
             rootView: MenuBarPopoverView(
@@ -237,9 +235,21 @@ class MenuBarController: NSObject, ObservableObject {
                 self?.systemMonitor.updateRefreshInterval(newInterval)
             }
             .store(in: &cancellables)
+
+        preferencesManager.$temperatureUnit
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] newUnit in
+                self?.temperatureUnit = newUnit
+                self?.updateStatusItemTitle()
+            }
+            .store(in: &cancellables)
         
-        preferencesManager.$showCPU
-            .merge(with: preferencesManager.$showMemory, preferencesManager.$showDisk)
+        Publishers.Merge4(
+            preferencesManager.$showCPU,
+            preferencesManager.$showMemory,
+            preferencesManager.$showDisk,
+            preferencesManager.$showTemperature
+        )
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 self?.setupStatusItem() // Recreate status items when visibility changes
@@ -291,20 +301,16 @@ class MenuBarController: NSObject, ObservableObject {
         if prefs.showDisk {
             metrics.append(StatusItemView.Metric(kind: .disk, percentage: stats.diskUsage.percentage))
         }
+        if prefs.showTemperature {
+            metrics.append(StatusItemView.Metric(kind: .temp, celsius: stats.temperature?.celsius, unit: prefs.temperatureUnit))
+        }
         
         // Update the custom view metrics and layout
         customView.metrics = metrics
         customView.layoutStyle = (prefs.displayFormat == .vertical) ? .vertical : .horizontal
         
         // Update width and frame if needed, but don't recreate the status item
-        let expectedWidth: CGFloat = {
-            switch prefs.displayFormat {
-            case .vertical:
-                return 90  // Narrower for vertical layout
-            default:
-                return 150 // Original width for compact horizontal layout
-            }
-        }()
+        let expectedWidth = statusItemWidth(for: prefs.displayFormat, metricCount: metrics.count)
         
         // Update status item length and custom view frame
         statusItem?.length = expectedWidth
@@ -490,6 +496,45 @@ struct MenuBarPopoverView: View {
             .help("Click to open Activity Monitor Disk tab")
             .opacity(controller.preferencesManager.showDisk ? 1 : 0.25)
 
+            // Temperature
+            VStack(alignment: .leading, spacing: 4) {
+                let temperature = systemMonitor.currentStats.temperature
+                let celsius = temperature?.celsius
+                let unit = controller.temperatureUnit
+                let color: Color = {
+                    guard let celsius else { return .secondary }
+                    return celsius >= 90 ? .red : (celsius >= 80 ? .orange : .pink)
+                }()
+                HStack {
+                    Image(systemName: "thermometer.medium")
+                        .font(.caption)
+                        .foregroundColor(color)
+                    Text("Temperature")
+                        .font(.caption)
+                        .fontWeight(.medium)
+                    Spacer()
+                    if let temperature {
+                        Text(temperature.sensorName)
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Text(temperature.formatted(unit: unit))
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(color)
+                    } else {
+                        Text("Unavailable")
+                            .font(.caption)
+                            .fontWeight(.semibold)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                ProgressView(value: min(max((celsius ?? 0) / 100.0, 0), 1))
+                    .progressViewStyle(LinearProgressViewStyle(tint: color))
+                    .scaleEffect(y: 0.8)
+            }
+            .help("CPU temperature from the first available AppleSMC CPU sensor")
+            .opacity(controller.preferencesManager.showTemperature ? 1 : 0.25)
+
             // Settings (collapsible)
             if controller.showSettings {
                 Divider()
@@ -539,7 +584,7 @@ struct MenuBarPopoverView: View {
                             get: { controller.preferencesManager.showCPU },
                             set: { newValue in
                                 let prefs = controller.preferencesManager
-                                if !newValue && !prefs.showMemory && !prefs.showDisk {
+                                if !newValue && !prefs.showMemory && !prefs.showDisk && !prefs.showTemperature {
                                     controller.showLastMetricWarning(); return
                                 }
                                 prefs.showCPU = newValue
@@ -550,7 +595,7 @@ struct MenuBarPopoverView: View {
                             get: { controller.preferencesManager.showMemory },
                             set: { newValue in
                                 let prefs = controller.preferencesManager
-                                if !newValue && !prefs.showCPU && !prefs.showDisk {
+                                if !newValue && !prefs.showCPU && !prefs.showDisk && !prefs.showTemperature {
                                     controller.showLastMetricWarning(); return
                                 }
                                 prefs.showMemory = newValue
@@ -561,16 +606,47 @@ struct MenuBarPopoverView: View {
                             get: { controller.preferencesManager.showDisk },
                             set: { newValue in
                                 let prefs = controller.preferencesManager
-                                if !newValue && !prefs.showCPU && !prefs.showMemory {
+                                if !newValue && !prefs.showCPU && !prefs.showMemory && !prefs.showTemperature {
                                     controller.showLastMetricWarning(); return
                                 }
                                 prefs.showDisk = newValue
                                 controller.updateStatusItemTitle()
                             }
                         ))
+                        Toggle("Temp", isOn: Binding(
+                            get: { controller.preferencesManager.showTemperature },
+                            set: { newValue in
+                                let prefs = controller.preferencesManager
+                                if !newValue && !prefs.showCPU && !prefs.showMemory && !prefs.showDisk {
+                                    controller.showLastMetricWarning(); return
+                                }
+                                prefs.showTemperature = newValue
+                                controller.updateStatusItemTitle()
+                            }
+                        ))
                     }
                     .font(.caption)
                     .toggleStyle(.checkbox)
+                    HStack {
+                        Text("Temp Unit:")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .frame(width: 55, alignment: .leading)
+                        Picker("", selection: Binding(
+                            get: { controller.temperatureUnit },
+                            set: { newUnit in
+                                controller.temperatureUnit = newUnit
+                                controller.preferencesManager.temperatureUnit = newUnit
+                                controller.updateStatusItemTitle()
+                            }
+                        )) {
+                            ForEach(TemperatureUnit.allCases, id: \.self) { unit in
+                                Text(unit.rawValue).tag(unit)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                     Toggle("Launch at login", isOn: Binding(
                         get: { controller.preferencesManager.launchAtLogin },
                         set: { controller.preferencesManager.launchAtLogin = $0 }

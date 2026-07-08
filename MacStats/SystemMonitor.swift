@@ -1,4 +1,6 @@
 import Foundation
+import IOKit
+import IOKit.hid
 import IOKit.ps
 
 // MARK: - System Statistics Models
@@ -6,6 +8,7 @@ struct SystemStats {
     let cpuUsage: Double
     let memoryUsage: MemoryUsage
     let diskUsage: DiskUsage
+    let temperature: TemperatureReading?
 }
 
 struct MemoryUsage {
@@ -20,12 +23,18 @@ struct DiskUsage {
     let percentage: Double
 }
 
+struct TemperatureReading {
+    let celsius: Double
+    let sensorName: String
+}
+
 // MARK: - System Monitor Class
 class SystemMonitor: ObservableObject {
     @Published var currentStats = SystemStats(
         cpuUsage: 0.0,
         memoryUsage: MemoryUsage(used: 0, total: 0, percentage: 0.0),
-        diskUsage: DiskUsage(used: 0, total: 0, percentage: 0.0)
+        diskUsage: DiskUsage(used: 0, total: 0, percentage: 0.0),
+        temperature: nil
     )
     
     private var timer: Timer?
@@ -33,6 +42,7 @@ class SystemMonitor: ObservableObject {
     
     // For CPU calculation
     private var previousCPUInfo: [natural_t]?
+    private let temperatureReader = TemperatureReader()
     
     init() {
         startMonitoring()
@@ -65,12 +75,14 @@ class SystemMonitor: ObservableObject {
             let cpuUsage = self.getCPUUsage()
             let memoryUsage = self.getMemoryUsage()
             let diskUsage = self.getDiskUsage()
+            let temperature = self.temperatureReader.cpuTemperature()
             
             DispatchQueue.main.async {
                 self.currentStats = SystemStats(
                     cpuUsage: cpuUsage,
                     memoryUsage: memoryUsage,
-                    diskUsage: diskUsage
+                    diskUsage: diskUsage,
+                    temperature: temperature
                 )
             }
         }
@@ -235,4 +247,298 @@ extension DiskUsage {
         }
     }
     var formattedTotal: String { String(format: "%.1fGB", totalGB) }
+}
+
+extension TemperatureReading {
+    func value(in unit: TemperatureUnit) -> Double {
+        switch unit {
+        case .celsius:
+            return celsius
+        case .fahrenheit:
+            return (celsius * 9.0 / 5.0) + 32.0
+        }
+    }
+
+    func formatted(unit: TemperatureUnit) -> String {
+        String(format: "%.1f %@", value(in: unit), unit.symbol)
+    }
+}
+
+// MARK: - Temperature Readers
+private final class TemperatureReader {
+    private let appleSiliconReader = AppleSiliconTemperatureReader()
+    private let smcReader = SMCTemperatureReader()
+
+    func cpuTemperature() -> TemperatureReading? {
+        appleSiliconReader.cpuTemperature() ?? smcReader.cpuTemperature()
+    }
+}
+
+private typealias IOHIDEventRef = CFTypeRef
+private typealias IOHIDEventSystemClientRef = CFTypeRef
+
+@_silgen_name("IOHIDEventSystemClientCreate")
+private func HIDEventSystemClientCreate(_ allocator: CFAllocator?) -> IOHIDEventSystemClientRef
+
+@_silgen_name("IOHIDEventSystemClientSetMatching")
+private func HIDEventSystemClientSetMatching(_ client: IOHIDEventSystemClientRef, _ matching: CFDictionary)
+
+@_silgen_name("IOHIDEventSystemClientCopyServices")
+private func HIDEventSystemClientCopyServices(_ client: IOHIDEventSystemClientRef) -> CFArray?
+
+@_silgen_name("IOHIDServiceClientCopyEvent")
+private func HIDServiceClientCopyEvent(_ service: IOHIDServiceClient, _ type: Int64, _ options: Int32, _ timestamp: UInt64) -> IOHIDEventRef?
+
+@_silgen_name("IOHIDEventGetFloatValue")
+private func HIDEventGetFloatValue(_ event: IOHIDEventRef, _ field: Int32) -> Double
+
+private final class AppleSiliconTemperatureReader {
+    private let temperatureEventType: Int64 = 15
+    private let temperatureUsagePage = 0xff00
+    private let temperatureUsage = 5
+    private lazy var eventSystemClient: IOHIDEventSystemClientRef = HIDEventSystemClientCreate(kCFAllocatorDefault)
+    private var services: [IOHIDServiceClient]?
+
+    func cpuTemperature() -> TemperatureReading? {
+        let dieReadings = temperatureServices().compactMap { service -> Double? in
+            guard let product = IOHIDServiceClientCopyProperty(service, kIOHIDProductKey as CFString) as? String,
+                  product.hasPrefix("PMU tdie"),
+                  let event = HIDServiceClientCopyEvent(service, temperatureEventType, 0, 0) else {
+                return nil
+            }
+
+            let celsius = HIDEventGetFloatValue(event, Int32(temperatureEventType << 16))
+            guard celsius > 0, celsius < 130 else { return nil }
+            return celsius
+        }
+
+        guard let hottestDie = dieReadings.max() else { return nil }
+        return TemperatureReading(celsius: hottestDie, sensorName: "CPU Die")
+    }
+
+    private func temperatureServices() -> [IOHIDServiceClient] {
+        if let services { return services }
+
+        let matching: [String: Any] = [
+            kIOHIDPrimaryUsagePageKey: temperatureUsagePage,
+            kIOHIDPrimaryUsageKey: temperatureUsage
+        ]
+        HIDEventSystemClientSetMatching(eventSystemClient, matching as CFDictionary)
+
+        let matchedServices = (HIDEventSystemClientCopyServices(eventSystemClient) as? [IOHIDServiceClient]) ?? []
+        services = matchedServices
+        return matchedServices
+    }
+}
+
+// MARK: - SMC Temperature Reader
+private final class SMCTemperatureReader {
+    private struct SMCVersion {
+        var major: UInt8 = 0
+        var minor: UInt8 = 0
+        var build: UInt8 = 0
+        var reserved: UInt8 = 0
+        var release: UInt16 = 0
+    }
+
+    private struct SMCPowerLimitData {
+        var version: UInt16 = 0
+        var length: UInt16 = 0
+        var cpuPLimit: UInt32 = 0
+        var gpuPLimit: UInt32 = 0
+        var memPLimit: UInt32 = 0
+    }
+
+    private struct SMCKeyInfo {
+        var dataSize: UInt32 = 0
+        var dataType: UInt32 = 0
+        var dataAttributes: UInt8 = 0
+    }
+
+    private struct SMCBytes {
+        var byte0: UInt8 = 0
+        var byte1: UInt8 = 0
+        var byte2: UInt8 = 0
+        var byte3: UInt8 = 0
+        var byte4: UInt8 = 0
+        var byte5: UInt8 = 0
+        var byte6: UInt8 = 0
+        var byte7: UInt8 = 0
+        var byte8: UInt8 = 0
+        var byte9: UInt8 = 0
+        var byte10: UInt8 = 0
+        var byte11: UInt8 = 0
+        var byte12: UInt8 = 0
+        var byte13: UInt8 = 0
+        var byte14: UInt8 = 0
+        var byte15: UInt8 = 0
+        var byte16: UInt8 = 0
+        var byte17: UInt8 = 0
+        var byte18: UInt8 = 0
+        var byte19: UInt8 = 0
+        var byte20: UInt8 = 0
+        var byte21: UInt8 = 0
+        var byte22: UInt8 = 0
+        var byte23: UInt8 = 0
+        var byte24: UInt8 = 0
+        var byte25: UInt8 = 0
+        var byte26: UInt8 = 0
+        var byte27: UInt8 = 0
+        var byte28: UInt8 = 0
+        var byte29: UInt8 = 0
+        var byte30: UInt8 = 0
+        var byte31: UInt8 = 0
+    }
+
+    private struct SMCKeyData {
+        var key: UInt32 = 0
+        var version = SMCVersion()
+        var powerLimitData = SMCPowerLimitData()
+        var keyInfo = SMCKeyInfo()
+        var result: UInt8 = 0
+        var status: UInt8 = 0
+        var data8: UInt8 = 0
+        var data32: UInt32 = 0
+        var bytes = SMCBytes()
+    }
+
+    private struct SMCValue {
+        let dataType: String
+        let bytes: [UInt8]
+    }
+
+    private let kernelIndex: UInt32 = 2
+    private let readBytesCommand: UInt8 = 5
+    private let readKeyInfoCommand: UInt8 = 9
+    private let temperatureSensors: [(key: String, name: String)] = [
+        ("TC0P", "CPU Proximity"),
+        ("TC0E", "CPU Core"),
+        ("TC0D", "CPU Diode"),
+        ("TCXC", "CPU PECI")
+    ]
+
+    private var connection: io_connect_t = 0
+
+    deinit {
+        if connection != 0 {
+            IOServiceClose(connection)
+        }
+    }
+
+    func cpuTemperature() -> TemperatureReading? {
+        guard openConnection() else { return nil }
+
+        for sensor in temperatureSensors {
+            guard let value = readValue(forKey: sensor.key),
+                  let celsius = decodeTemperature(value),
+                  celsius > 0,
+                  celsius < 130 else {
+                continue
+            }
+
+            return TemperatureReading(celsius: celsius, sensorName: sensor.name)
+        }
+
+        return nil
+    }
+
+    private func openConnection() -> Bool {
+        if connection != 0 { return true }
+
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("AppleSMC"))
+        guard service != 0 else { return false }
+        defer { IOObjectRelease(service) }
+
+        return IOServiceOpen(service, mach_task_self_, 0, &connection) == KERN_SUCCESS
+    }
+
+    private func readValue(forKey key: String) -> SMCValue? {
+        guard let keyInfo = readKeyInfo(forKey: key), keyInfo.dataSize <= 32 else { return nil }
+
+        var input = SMCKeyData()
+        var output = SMCKeyData()
+        input.key = fourCharCode(key)
+        input.keyInfo = keyInfo
+        input.data8 = readBytesCommand
+
+        guard callSMC(input: &input, output: &output) == KERN_SUCCESS,
+              output.result == 0 else {
+            return nil
+        }
+
+        let dataSize = Int(keyInfo.dataSize)
+        let data = withUnsafeBytes(of: output.bytes) { rawBuffer in
+            Array(rawBuffer.prefix(dataSize))
+        }
+
+        return SMCValue(dataType: fourCharString(keyInfo.dataType), bytes: data)
+    }
+
+    private func readKeyInfo(forKey key: String) -> SMCKeyInfo? {
+        var input = SMCKeyData()
+        var output = SMCKeyData()
+        input.key = fourCharCode(key)
+        input.data8 = readKeyInfoCommand
+
+        guard callSMC(input: &input, output: &output) == KERN_SUCCESS,
+              output.result == 0 else {
+            return nil
+        }
+
+        return output.keyInfo
+    }
+
+    private func callSMC(input: inout SMCKeyData, output: inout SMCKeyData) -> kern_return_t {
+        let inputSize = MemoryLayout<SMCKeyData>.stride
+        var outputSize = MemoryLayout<SMCKeyData>.stride
+
+        return withUnsafePointer(to: &input) { inputPointer in
+            withUnsafeMutablePointer(to: &output) { outputPointer in
+                IOConnectCallStructMethod(
+                    connection,
+                    kernelIndex,
+                    UnsafeRawPointer(inputPointer),
+                    inputSize,
+                    UnsafeMutableRawPointer(outputPointer),
+                    &outputSize
+                )
+            }
+        }
+    }
+
+    private func decodeTemperature(_ value: SMCValue) -> Double? {
+        switch value.dataType {
+        case "sp78":
+            guard value.bytes.count >= 2 else { return nil }
+            let rawValue = UInt16(value.bytes[0]) << 8 | UInt16(value.bytes[1])
+            return Double(Int16(bitPattern: rawValue)) / 256.0
+        case "flt ":
+            guard value.bytes.count >= 4 else { return nil }
+            let rawValue = UInt32(value.bytes[0]) << 24 |
+                UInt32(value.bytes[1]) << 16 |
+                UInt32(value.bytes[2]) << 8 |
+                UInt32(value.bytes[3])
+            return Double(Float(bitPattern: rawValue))
+        default:
+            return nil
+        }
+    }
+
+    private func fourCharCode(_ string: String) -> UInt32 {
+        var result: UInt32 = 0
+        for byte in string.utf8.prefix(4) {
+            result = (result << 8) | UInt32(byte)
+        }
+        return result
+    }
+
+    private func fourCharString(_ code: UInt32) -> String {
+        let bytes = [
+            UInt8((code >> 24) & 0xff),
+            UInt8((code >> 16) & 0xff),
+            UInt8((code >> 8) & 0xff),
+            UInt8(code & 0xff)
+        ]
+        return String(bytes: bytes, encoding: .ascii) ?? ""
+    }
 }

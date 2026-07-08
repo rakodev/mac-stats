@@ -18,6 +18,12 @@ class UserPreferencesManager: ObservableObject {
             UserDefaults.standard.set(refreshInterval, forKey: "refreshInterval")
         }
     }
+
+    @Published var temperatureUnit: TemperatureUnit {
+        didSet {
+            UserDefaults.standard.set(temperatureUnit.rawValue, forKey: "temperatureUnit")
+        }
+    }
     
     @Published var launchAtLogin: Bool {
         didSet {
@@ -43,6 +49,9 @@ class UserPreferencesManager: ObservableObject {
     @Published var showDisk: Bool {
         didSet { UserDefaults.standard.set(showDisk, forKey: "showDisk") }
     }
+    @Published var showTemperature: Bool {
+        didSet { UserDefaults.standard.set(showTemperature, forKey: "showTemperature") }
+    }
     
     private init() {
         // Load saved preferences or use defaults
@@ -56,12 +65,21 @@ class UserPreferencesManager: ObservableObject {
         
         let savedInterval = UserDefaults.standard.double(forKey: "refreshInterval")
         self.refreshInterval = savedInterval > 0 ? savedInterval : 2.0
+
+        if let savedUnit = UserDefaults.standard.string(forKey: "temperatureUnit"),
+           let unit = TemperatureUnit(rawValue: savedUnit) {
+            self.temperatureUnit = unit
+        } else {
+            self.temperatureUnit = .celsius
+            UserDefaults.standard.set(TemperatureUnit.celsius.rawValue, forKey: "temperatureUnit")
+        }
         
         self.launchAtLogin = UserDefaults.standard.object(forKey: "launchAtLogin") as? Bool ?? true
         self.showInDock = UserDefaults.standard.bool(forKey: "showInDock")
         self.showCPU = UserDefaults.standard.object(forKey: "showCPU") as? Bool ?? true
         self.showMemory = UserDefaults.standard.object(forKey: "showMemory") as? Bool ?? true
         self.showDisk = UserDefaults.standard.object(forKey: "showDisk") as? Bool ?? true
+        self.showTemperature = UserDefaults.standard.object(forKey: "showTemperature") as? Bool ?? false
     }
     
     private func updateLaunchAtLogin() {
@@ -92,11 +110,13 @@ class UserPreferencesManager: ObservableObject {
     func resetToDefaults() {
         displayFormat = .compact
         refreshInterval = 2.0
+        temperatureUnit = .celsius
         launchAtLogin = true
         showInDock = false
         showCPU = true
         showMemory = true
         showDisk = true
+        showTemperature = false
     }
 }
 
@@ -135,4 +155,16 @@ enum Theme: String, CaseIterable {
     case light = "Light"
     case dark = "Dark"
     case system = "System"
+}
+
+enum TemperatureUnit: String, CaseIterable {
+    case celsius = "Celsius"
+    case fahrenheit = "Fahrenheit"
+
+    var symbol: String {
+        switch self {
+        case .celsius: return "C"
+        case .fahrenheit: return "F"
+        }
+    }
 }
